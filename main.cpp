@@ -32,6 +32,7 @@ int main() {
             TradeSubscriber.subscribe("000001.SZ");
         }
 
+
     } catch (const std::exception& ex) {
         std::cerr << "异常终止: " << ex.what() << std::endl;
         return -1;
