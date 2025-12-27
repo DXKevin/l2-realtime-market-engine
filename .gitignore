@@ -43,3 +43,6 @@
 #build
 /bin
 /build
+
+# config
+config.ini

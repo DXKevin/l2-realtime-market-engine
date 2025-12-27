@@ -1,4 +1,4 @@
-#include "logger.h"
+#include "Logger.h"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -37,7 +37,7 @@ bool init_log_system(const char* filename) {
         g_console_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [%^%l%$] [%n] [thread %t] %v");
         g_file_sink->set_pattern("[%Y-%m-%d %H:%M:%S] [%l] [%n] [thread %t] %v");
         
-        std::cout << "日志系统初始化成功！日志保存在: " << filename << std::endl;
+        // std::cout << "日志系统初始化成功！日志保存在: " << filename << std::endl;
         return true;
         
     } catch (const std::exception& e) {
