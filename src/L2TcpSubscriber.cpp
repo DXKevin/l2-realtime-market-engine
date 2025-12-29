@@ -5,9 +5,11 @@
 
 #include "L2TcpSubscriber.h"
 #include "logger.h"
+#include "L2Parser.h"
 
 #ifdef _WIN32
     #include <ws2tcpip.h>
+    #pragma comment(lib, "Ws2_32.lib")
 #else
     // TODO: add POSIX socket support if needed
 #endif
@@ -17,19 +19,25 @@ static const char* module_name = "L2TcpSubscriber";
 // -----------------------
 // WinSock 初始化（单例）
 // -----------------------
-static class WinSockInitializer {
+class WinSockInitializer {
 public:
     WinSockInitializer() {
         WSADATA wsaData;
         int res = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (res != 0) {
-            std::cerr << "[WinSock] 初始化失败: " << res << std::endl;
+            std::cerr << "[WinSock] 初始化失败：" << res << std::endl;
+            // 但不要退出程序，继续运行
         }
     }
+
     ~WinSockInitializer() {
-        WSACleanup();
+        // 只有在初始化成功时才清理
+        WSACleanup(); // ← 安全：即使初始化失败，WSACleanup 也安全（Windows 允许）
     }
-} g_winsockInit;
+};
+
+// 全局实例：确保在 main 之前初始化
+static WinSockInitializer g_winsockInit;
 
 // -----------------------
 // L2TcpSubscriber 实现
@@ -81,6 +89,8 @@ bool L2TcpSubscriber::connect() {
         return false;
     }
 
+    LOG_INFO(module_name, "TCP 连接成功: {}:{}", host_, port_);
+
     running_ = true;
     recvThread_ = std::thread(&L2TcpSubscriber::receiveLoop, this);
 
@@ -90,7 +100,12 @@ bool L2TcpSubscriber::connect() {
 }
 
 void L2TcpSubscriber::login(){
-    std::string loginCmd = "DL," + username_ + "," + password_ + "\n";
+    if (!running_ || sock_ == INVALID_SOCKET) {
+        LOG_ERROR(module_name, "TCP 未连接，无法登录 {}:{}", host_, port_);
+        return;
+    }
+
+    std::string loginCmd = "DL," + username_ + "," + password_;
     sendData(loginCmd);
 }
 
@@ -114,6 +129,8 @@ void L2TcpSubscriber::sendData(const std::string& message) {
 std::string L2TcpSubscriber::recvData() {
     char buffer[8192] = {0};
     int n = recv(sock_, buffer, sizeof(buffer) - 1, 0);
+
+
     if (n == SOCKET_ERROR) {
         LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>", host_, port_);
         return "";
@@ -124,12 +141,21 @@ std::string L2TcpSubscriber::recvData() {
         return "";
     }
 
-    if (buffer[0] == '<') {
-        // 行情流
-        // 解析处理
+    if (isContainStrFlag(buffer, n, "Login successful")) {
+        LOG_INFO(module_name, "登录成功");
+        return "1";
     }
 
-    return std::string(buffer, n);
+    if (isContainStrFlag(buffer, n, "Subscription successful")) {
+        LOG_INFO(module_name, "订阅成功");
+        return "1";
+    }
+
+    if (isContainStrFlag(buffer, n, "HeartBeat")) {
+        return "1";
+    }
+
+    return std::string(buffer, n); // 返回行情数据
 }
 
 void L2TcpSubscriber::stop() {
@@ -147,15 +173,41 @@ void L2TcpSubscriber::stop() {
     if (recvThread_.joinable()) {
         recvThread_.join();
     }
+
+    LOG_INFO(module_name, "已断开与服务器的连接: {}:{}", host_, port_);   
+}
+
+bool L2TcpSubscriber::isContainStrFlag(const char* data, size_t len, const char flag[]) {
+    std::string_view sv(data, len);
+    return sv.find(flag) != std::string_view::npos;
 }
 
 void L2TcpSubscriber::receiveLoop() {
+    LOG_INFO(module_name, "启动接收线程 <{}:{}>", host_, port_);
     while (running_) {
         std::string data = recvData();
+
         if (data.empty()) {
             break; // 连接关闭或出错
         }
+
+        if (data == "1") {
+            continue; // 登录或订阅成功或心跳包，跳过处理
+        }
+
         LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
+
+        auto orders = parseL2Data<L2Order>(data, [](const std::vector<std::string_view>& fields) {
+            return L2Order(fields);
+        });
+
+        for (const auto& order : orders) {
+            LOG_INFO(module_name,"index:{}, symbol:{}, volume:{}, side:{}",
+                order.index,
+                order.symbol,
+                order.volume,
+                order.side
+            );
+        }
     }
 }
-

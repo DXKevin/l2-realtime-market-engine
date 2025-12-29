@@ -34,8 +34,8 @@ public:
     // 停止接收并断开
     void stop();
 
-    // 是否正在运行
-    bool isRunning() const { return running_; }
+    bool isContainStrFlag(const char* data, size_t len, const char flag[]);
+
 
 private:
     void receiveLoop(); // 接收线程主循环
