@@ -2,45 +2,53 @@
 #ifndef L2_PARSER_H
 #define L2_PARSER_H
 
+#include <charconv>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <cctype>
 #include <functional>
 
-namespace {
+#include "Logger.h"
+
+
 
 // 辅助函数：安全地将 string_view 转为 int（仅用于小整数）
-int svToInt(std::string_view sv) {
-    if (sv.empty()) return 0;
+inline int svToInt(std::string_view sv) {
+    if (sv.empty()) {
+        return 0;
+    }
+
     int result = 0;
-    bool neg = false;
-    size_t i = 0;
-    if (sv[0] == '-') {
-        neg = true;
-        ++i;
+    std::from_chars_result res = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+
+    // 如果解析失败（如包含非数字字符），返回 0
+    // 你也可以选择抛出异常或记录日志，根据需求调整
+    if (res.ec == std::errc::invalid_argument || res.ec == std::errc::result_out_of_range) {
+        // 可选：记录警告
+        LOG_WARN("L2Parser", "Invalid integer: {}", sv);
+        return 0;
     }
-    for (; i < sv.size(); ++i) {
-        if (!std::isdigit(static_cast<unsigned char>(sv[i]))) break;
-        result = result * 10 + (sv[i] - '0');
-    }
-    return neg ? -result : result;
+
+    return result;
 }
 
 // 辅助函数：按 ',' 分割 string_view（不支持转义）
-std::vector<std::string_view> splitByComma(std::string_view str) {
+inline std::vector<std::string_view> splitByComma(std::string_view str) {
     std::vector<std::string_view> tokens;
     size_t start = 0;
     for (size_t i = 0; i <= str.size(); ++i) {
         if (i == str.size() || str[i] == ',') {
-            tokens.emplace_back(str.substr(start, i - start));
+            auto token = str.substr(start, i - start);
+            // 忽略空字段（处理 trailing comma）
+            if (!token.empty()) {
+                tokens.push_back(token);
+            }
             start = i + 1;
         }
     }
     return tokens;
 }
-
-} // anonymous namespace
 
 
 struct L2Order {
@@ -104,8 +112,23 @@ struct L2Trade {
 
 
 template<typename T>
-std::vector<T> parseL2Data(std::string_view data, std::function<T(const std::vector<std::string_view>&)> constructor) {
-    
+struct L2FieldCount {
+    static constexpr size_t field_num = 0; // 默认值
+};
+
+template<>
+struct L2FieldCount<L2Order> {
+    static constexpr size_t field_num = 11; // 11 个字段
+};
+
+template<>
+struct L2FieldCount<L2Trade> {
+    static constexpr size_t field_num = 11; // 11 个字段
+};
+
+template<typename T>
+std::vector<T> parseL2Data(std::string_view data) {
+    constexpr size_t EXPECTED_FIELDS = L2FieldCount<T>::field_num;
     std::vector<T> data_list;
     size_t pos = 0;
 
@@ -113,20 +136,46 @@ std::vector<T> parseL2Data(std::string_view data, std::function<T(const std::vec
         // 查找 '<'
         size_t open = data.find('<', pos);
         if (open == std::string_view::npos) break;
-        
-        // 查找 '#>'
-        size_t close = data.find("#>", open);
+
+        // 查找 '>'
+        size_t close = data.find('>', open);
         if (close == std::string_view::npos) break;
 
-        // 提取内容：跳过 '<'，到 '#' 之前
-        std::string_view record = data.substr(open + 1, close - open - 1);
-        pos = close + 2; // move past "#>"
-        
-        // 分割字段
-        auto fields = splitByComma(record);
-        if (fields.size() < 11) continue; // 至少11个字段
+        // 提取整个 <...> 内容
+        std::string_view full_record = data.substr(open + 1, close - open - 1);
+        // 按 '#' 分割为多个订单
+        std::string_view current = full_record;
+        size_t start = 0;
+        size_t end = 0;
 
-        data_list.emplace_back(constructor(fields));
+        while ((end = current.find('#', start)) != std::string_view::npos) {
+            std::string_view order_part = current.substr(start, end - start);
+            if (!order_part.empty()) {
+                auto fields = splitByComma(order_part);
+
+                if (fields.size() == EXPECTED_FIELDS) {
+                    data_list.emplace_back(fields);
+                } else {
+                    LOG_WARN("L2Parser", "字段数不匹配");
+                }
+            }
+            start = end + 1;  // 跳过 '#'
+        }
+
+        // 处理最后一个 # 后的部分（如果没有 #，就是整个 full_record）
+        // if (start < current.size()) {
+        //     std::string_view last_order = current.substr(start);
+        //     if (!last_order.empty()) {
+        //         auto fields = splitByComma(last_order);
+        //         if (fields.size() == EXPECTED_FIELDS) {
+        //             data_list.emplace_back(constructor(fields));
+        //         } else {
+        //             LOG_WARN("L2Parser", "字段数不匹配");
+        //         }
+        //     }
+        // }
+
+        pos = close + 1; // 移动到 '>' 之后
     }
 
     return data_list;

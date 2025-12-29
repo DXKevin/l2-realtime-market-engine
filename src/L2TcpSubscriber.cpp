@@ -197,9 +197,7 @@ void L2TcpSubscriber::receiveLoop() {
 
         LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
 
-        auto orders = parseL2Data<L2Order>(data, [](const std::vector<std::string_view>& fields) {
-            return L2Order(fields);
-        });
+        auto orders = parseL2Data<L2Order>(data);
 
         for (const auto& order : orders) {
             LOG_INFO(module_name,"index:{}, symbol:{}, volume:{}, side:{}",
