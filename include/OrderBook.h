@@ -42,6 +42,10 @@ private:
     
     std::string symbol_;
 
+    // 价格 → 该档位总挂单量
+    std::map<int, int> bid_volume_at_price_;
+    std::map<int, int> ask_volume_at_price_;
+
     // 按价格分组的买卖订单簿
     std::map<int,std::list<OrderRef>> bids_;
     std::map<int,std::list<OrderRef>> asks_;

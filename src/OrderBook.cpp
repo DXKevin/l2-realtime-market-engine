@@ -189,6 +189,8 @@ void OrderBook::addOrder(const L2Order& order) {
     list.push_back({order.volume, order.price, order.side, order.id});
     order_index_[order.id] = std::prev(list.end());
 
+    auto& volume_map = (order.side == 1) ? bid_volume_at_price_ : ask_volume_at_price_;
+    volume_map[order.price] += order.volume;
     order.info();
 }
 
@@ -196,20 +198,43 @@ void OrderBook::addOrder(const L2Order& order) {
 void OrderBook::onTrade(const L2Trade& trade) {
     auto reduce_volume = [&](const std::string& id) {
         auto index_it = order_index_.find(id);
-        if (index_it != order_index_.end()) {
-            index_it->second->volume -= trade.volume;
-
-            if (index_it->second->volume == 0) {
-                // 如果订单量为0, 从订单簿和索引中移除
-                removeOrder(id);
-            } else if (index_it->second->volume < 0)
-            {
-                removeOrder(id);
-                LOG_WARN(module_name, "[{}] 订单ID:{} 处理后数量为负, 已经移除该订单", 
-                    symbol_, id);
+        if (index_it == order_index_.end()) {
+            return;
+        }
+        // 取成交量和挂单量较小值进行减少, 防止聚合订单簿与总订单簿不一致
+        int reduce_fix = std::min(trade.volume, index_it->second->volume);
+        index_it->second->volume -= reduce_fix;
+        
+        int price = index_it->second->price;
+        int side = index_it->second->side;
+        
+        
+        // 更新价格档位总挂单量
+        if (side == 1) {
+            bid_volume_at_price_[price] -= reduce_fix;
+            if (bid_volume_at_price_[price] <= 0) {
+                bid_volume_at_price_.erase(price);
+            }
+        } else {
+            ask_volume_at_price_[price] -= reduce_fix;
+            if (ask_volume_at_price_[price] <= 0) {
+                ask_volume_at_price_.erase(price);
             }
         }
+
+
+        if (index_it->second->volume == 0) {
+            // 如果订单量为0, 从订单簿和索引中移除
+            removeOrder(id);
+
+        } else if (index_it->second->volume < 0)
+        {
+            removeOrder(id);
+            LOG_WARN(module_name, "[{}] 订单ID:{} 处理后数量为负, 已经移除该订单", 
+                symbol_, id);
+        }
     };
+    
 
     reduce_volume(trade.buy_id);
     reduce_volume(trade.sell_id);
@@ -232,6 +257,7 @@ void OrderBook::removeOrder(const std::string& order_id) {
     // 取出订单信息
     int price = order_iter->price;
     int side = order_iter->side;
+    int volume = order_iter->volume;
 
     // 拿到买方盘口或者卖方盘口
     auto& book = (side == 1) ? bids_ : asks_;
