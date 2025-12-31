@@ -285,33 +285,30 @@ void OrderBook::removeOrder(const std::string& order_id) {
 }
 
 
-// 打印买卖盘前5档
-void OrderBook::printTop5() const {
+void OrderBook::printOrderBook(int level_num) const {
     LOG_INFO(module_name, "===== OrderBook Top 5 for {} =====", symbol_);
 
-    // 打印卖盘（asks）—— 价格从低到高，取前5档
+    // 卖盘（Asks）：价格从低到高（asks_ 是升序 map）
     LOG_INFO(module_name, "Asks (Sell):");
     int ask_count = 0;
-    for (auto it = asks_.rbegin(); it != asks_.rend() && ask_count < 5; ++it) {
-        int total_vol = 0;
-        for (const auto& order : it->second) {
-            total_vol += order.volume;
-        }
-        double price = it->first / 10000.0; // 假设 price 是以 0.0001 为单位存储的整数
-        LOG_INFO(module_name, "  {:>8.4f}  {:>10}", price, total_vol);
+    for (auto it = ask_volume_at_price_.rbegin(); 
+         it != ask_volume_at_price_.rend() && ask_count < level_num; 
+         ++it) {
+        double price = it->first / 10000.0;
+        int total_vol = it->second;
+        LOG_INFO(module_name, "  {:8.4f}  {:10}", price, total_vol);
         ++ask_count;
     }
 
-    // 打印买盘（bids）—— 价格从高到低，取前5档
+    // 买盘（Bids）：价格从高到低（bid_volume_at_price_ 是升序 map，需反向）
     LOG_INFO(module_name, "Bids (Buy):");
     int bid_count = 0;
-    for (auto it = bids_.rbegin(); it != bids_.rend() && bid_count < 5; ++it) {
-        int total_vol = 0;
-        for (const auto& order : it->second) {
-            total_vol += order.volume;
-        }
+    for (auto it = bid_volume_at_price_.begin(); 
+         it != bid_volume_at_price_.end() && bid_count < 5; 
+         ++it) {
         double price = it->first / 10000.0;
-        LOG_INFO(module_name, "  {:>8.4f}  {:>10}", price, total_vol);
+        int total_vol = it->second;
+        LOG_INFO(module_name, "  {:8.4f}  {:10}", price, total_vol);
         ++bid_count;
     }
 

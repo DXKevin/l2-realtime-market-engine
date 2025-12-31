@@ -30,7 +30,7 @@ private:
     void addOrder(const L2Order& order);
     void onTrade(const L2Trade& trade);
     void removeOrder(const std::string& order_id);
-    void printTop5() const;
+    void printOrderBook(int level_num) const;
 
     // 订单簿相关数据结构
     struct OrderRef {
