@@ -1,4 +1,5 @@
 // L2Parser.h
+// L2行情数据解析器 - 解析上交所/深交所L2行情数据流
 #pragma once
 
 #include <charconv>
@@ -7,11 +8,17 @@
 #include <vector>
 #include <cctype>
 
-#include "Logger.h"
+#include "logger.h"
 #include "DataStruct.h"
 
 
-// 辅助函数：按 ',' 分割 string_view（不支持转义）
+/**
+ * @brief 按逗号分割字符串视图
+ * @param str 待分割的字符串
+ * @return 分割后的字符串视图数组
+ * 
+ * 注意：不支持转义字符
+ */
 inline std::vector<std::string_view> splitByComma(std::string_view str) {
     std::vector<std::string_view> tokens;
     size_t start = 0;
@@ -28,7 +35,10 @@ inline std::vector<std::string_view> splitByComma(std::string_view str) {
     return tokens;
 }
 
-
+/**
+ * @brief L2数据字段数量模板
+ * 用于编译期确定不同数据类型的字段数
+ */
 template<typename T>
 struct L2FieldCount {
     static constexpr size_t field_num = 0; // 默认值
@@ -36,20 +46,42 @@ struct L2FieldCount {
 
 template<>
 struct L2FieldCount<L2Order> {
-    static constexpr size_t field_num = 11; // 11 个字段
+    static constexpr size_t field_num = 11;
 };
 
 template<>
 struct L2FieldCount<L2Trade> {
-    static constexpr size_t field_num = 12; // 11 个字段
+    static constexpr size_t field_num = 12;
 };
 
 
+/**
+ * @brief 解析L2行情数据流
+ * @param data 原始行情数据，格式: <field1,field2,...#field1,field2,...#>
+ * @param type 数据类型："order" 或 "trade"
+ * @return 解析后的市场事件列表
+ * 
+ * 数据格式说明：
+ * - 使用 < 和 > 包裹一个或多个记录
+ * - 记录之间用 # 分隔
+ * - 记录内字段用逗号分隔
+ * - 示例: <1,600376.SH,103659530,14494293,190000,100,2,2,9100941,14494293,2,#>
+ */
 inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_view type) {
     constexpr size_t ORDER_FIELDS  = L2FieldCount<L2Order>::field_num;
     constexpr size_t TRADE_FIELDS  = L2FieldCount<L2Trade>::field_num;
 
     std::vector<MarketEvent> event_list;
+    
+    if (data.empty()) {
+        return event_list;
+    }
+    
+    if (type != "order" && type != "trade") {
+        LOG_WARN("L2Parser", "Unknown type: {}", std::string(type));
+        return event_list;
+    }
+
     size_t pos = 0;
 
     while (pos < data.size()) {
@@ -76,31 +108,18 @@ inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_v
                     if (fields.size() == ORDER_FIELDS) {
                         event_list.emplace_back(L2Order(fields));
                     } else {
-                        LOG_WARN("L2Parser", "order字段数不匹配");
+                        LOG_WARN("L2Parser", "order字段数不匹配: expected {}, got {}", ORDER_FIELDS, fields.size());
                     }
                 } else if (type == "trade"){
                     if (fields.size() == TRADE_FIELDS) {
                         event_list.emplace_back(L2Trade(fields));
                     } else {
-                        LOG_WARN("L2Parser", "trade字段数不匹配");
+                        LOG_WARN("L2Parser", "trade字段数不匹配: expected {}, got {}", TRADE_FIELDS, fields.size());
                     }
                 }
             }
             start = end + 1;  // 跳过 '#'
         }
-
-        // 处理最后一个 # 后的部分（如果没有 #，就是整个 full_record）
-        // if (start < current.size()) {
-        //     std::string_view last_order = current.substr(start);
-        //     if (!last_order.empty()) {
-        //         auto fields = splitByComma(last_order);
-        //         if (fields.size() == EXPECTED_FIELDS) {
-        //             data_list.emplace_back(constructor(fields));
-        //         } else {
-        //             LOG_WARN("L2Parser", "字段数不匹配");
-        //         }
-        //     }
-        // }
 
         pos = close + 1; // 移动到 '>' 之后
     }

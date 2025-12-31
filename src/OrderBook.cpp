@@ -2,8 +2,10 @@
 #include "logger.h"
 #include <iostream>
 
-
 static const char* module_name = "OrderBook";
+
+// 待处理事件队列大小阈值
+constexpr size_t PENDING_EVENTS_THRESHOLD = 100;
 
 
 OrderBook::OrderBook(const std::string& symbol) : symbol_(symbol) {
@@ -160,6 +162,10 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
 }
 
 void OrderBook::processPendingEvents() {
+    if (pending_events_.empty()) {
+        return;
+    }
+    
     const size_t max_process = 5; // 每次最多处理5个待处理事件
     size_t processed_index = 0;
 
@@ -174,6 +180,12 @@ void OrderBook::processPendingEvents() {
         }
         ++processed_index;
     }
+    
+    // 如果待处理队列过大，记录警告
+    if (pending_events_.size() > PENDING_EVENTS_THRESHOLD) {
+        LOG_WARN(module_name, "[{}] 待处理事件队列过大: {} events, processed {} events this round", 
+            symbol_, pending_events_.size(), processed_index);
+    }
 }
 
 // 检查订单是否存在
@@ -183,6 +195,27 @@ bool OrderBook::isOrderExists(const std::string& order_id) const {
 
 // 添加订单到订单簿
 void OrderBook::addOrder(const L2Order& order) {
+    if (order.id.empty()) {
+        LOG_WARN(module_name, "[{}] 尝试添加空ID订单", symbol_);
+        return;
+    }
+    
+    if (order.volume <= 0) {
+        LOG_WARN(module_name, "[{}] 尝试添加非正数量订单: id={}, volume={}", symbol_, order.id, order.volume);
+        return;
+    }
+    
+    if (order.price <= 0) {
+        LOG_WARN(module_name, "[{}] 尝试添加非正价格订单: id={}, price={}", symbol_, order.id, order.price);
+        return;
+    }
+    
+    // 检查订单是否已存在
+    if (order_index_.find(order.id) != order_index_.end()) {
+        LOG_WARN(module_name, "[{}] 订单ID已存在，跳过: id={}", symbol_, order.id);
+        return;
+    }
+    
     auto& book = (order.side == 1) ? bids_ : asks_;
     auto& list = book[order.price];
 
@@ -197,10 +230,15 @@ void OrderBook::addOrder(const L2Order& order) {
 // 处理成交
 void OrderBook::onTrade(const L2Trade& trade) {
     auto reduce_volume = [&](const std::string& id) {
+        if (id.empty()) {
+            return;
+        }
+        
         auto index_it = order_index_.find(id);
         if (index_it == order_index_.end()) {
             return;
         }
+        
         // 取成交量和挂单量较小值进行减少, 防止聚合订单簿与总订单簿不一致
         int reduce_fix = std::min(trade.volume, index_it->second->volume);
         index_it->second->volume -= reduce_fix;
