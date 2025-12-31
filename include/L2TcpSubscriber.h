@@ -1,6 +1,5 @@
 // L2TcpSubscriber.h
-#ifndef L2_TCP_SUBSCRIBER_H
-#define L2_TCP_SUBSCRIBER_H
+#pragma once
 
 #include <string>
 #include <vector>
@@ -57,5 +56,3 @@ private:
 
     std::unordered_map<std::string, std::unique_ptr<OrderBook>>* orderbooks_; // 指向全局订单簿映射
 };
-
-#endif // L2_TCP_SUBSCRIBER_H

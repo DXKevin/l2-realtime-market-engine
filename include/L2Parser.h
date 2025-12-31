@@ -1,6 +1,5 @@
 // L2Parser.h
-#ifndef L2_PARSER_H
-#define L2_PARSER_H
+#pragma once
 
 #include <charconv>
 #include <string>
@@ -108,5 +107,3 @@ inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_v
 
     return event_list;
 }
-
-#endif // L2_PARSER_H

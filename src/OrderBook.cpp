@@ -18,7 +18,7 @@ OrderBook::~OrderBook() {
     stop();
 }
 
-void OrderBook::pushEvent(const MarketEvent event) {
+void OrderBook::pushEvent(const MarketEvent& event) {
     event_queue.enqueue(event);
 }
 
@@ -34,6 +34,7 @@ void OrderBook::stop() {
 
 // 主线程循环
 void OrderBook::runProcessingLoop() {
+    int count = 0;
     while (running_) {
         MarketEvent evt;
         event_queue.wait_dequeue(evt);
@@ -43,8 +44,13 @@ void OrderBook::runProcessingLoop() {
         if (evt.type == MarketEvent::EventType::ORDER) {
             handleOrderEvent(evt);
 
-            // 有新的委托处理后，尝试处理待处理队列
-            processPendingEvents();
+            //每处理10次委托，处理一次待处理事件
+            ++count;
+            if (count == 10) {
+                processPendingEvents();
+                count = 0;
+            }
+            
         } else if (evt.type == MarketEvent::EventType::TRADE) {
             handleTradeEvent(evt);
         }
@@ -67,7 +73,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
         if (order.type == 10) {
             // 处理撤单可能存在的乱序情况
             if (isOrderExists(order.id)) {
-                remove_order(order.id);
+                removeOrder(order.id);
                 return;
             } else {
                 // 未找到订单，加入等待队列
@@ -77,7 +83,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
 
         } else if (order.type == 2)
         {   
-            add_order(order);
+            addOrder(order);
         } else {
             // 处理市价与本方最优逐笔委托
             null_price_order_ids_.insert(order.id);
@@ -89,7 +95,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
         /* 深圳逐笔委托 --> 市价单1/本方最优3 --> 这种订单由于价格未知不会加入Book, 
             但是会存下id, 用于后续处理trade, 虽然很少是这类单子但是也要处理 */
         if (order.type == 2) {
-            add_order(order);
+            addOrder(order);
         } else {
             // 处理市价与本方最优逐笔委托
             null_price_order_ids_.insert(order.id);
@@ -106,7 +112,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
         // 处理撤单可能存在的乱序情况
         if (trade.side == 1) {
             if (isOrderExists(trade.buy_id)) {
-                remove_order(trade.buy_id);
+                removeOrder(trade.buy_id);
                 return;
             } else {
                 // 未找到订单，加入等待队列
@@ -115,7 +121,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
             }
         } else {
             if (isOrderExists(trade.sell_id)) {
-                remove_order(trade.sell_id);
+                removeOrder(trade.sell_id);
                 return;
             } else {
                 // 未找到订单，加入等待队列
@@ -129,13 +135,13 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
         // 处理乱序, 可能找不到订单
         if (isOrderExists(trade.buy_id) && isOrderExists(trade.sell_id)) {
             // 成交双方的订单都存在于订单簿中, 直接处理成交
-            on_trade(trade);
+            onTrade(trade);
         } else if ((isOrderExists(trade.buy_id) || isOrderExists(trade.sell_id))) {
             // 只有一方订单存在于订单簿中, 检查是否有一方为市价单
             if (null_price_order_ids_.find(trade.buy_id) != null_price_order_ids_.end() ||
                 null_price_order_ids_.find(trade.sell_id) != null_price_order_ids_.end()) {
                 // 因为市价单肯定不存在于订单簿中, 那存在的肯定是正常订单, 可以直接处理成交
-                on_trade(trade);
+                onTrade(trade);
 
                 // 移除市价单ID
                 null_price_order_ids_.erase(trade.buy_id);
@@ -154,9 +160,11 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
 }
 
 void OrderBook::processPendingEvents() {
-    size_t count = pending_events_.size();
-    for (size_t i = 0; i < count; ++i) {
-        MarketEvent event = pending_events_.front();
+    const size_t max_process = 5; // 每次最多处理5个待处理事件
+    size_t processed_index = 0;
+
+    while (processed_index < max_process && !pending_events_.empty()) {
+        MarketEvent event = std::move(pending_events_.front());
         pending_events_.pop_front();
 
         if (event.type == MarketEvent::EventType::ORDER) {
@@ -164,6 +172,7 @@ void OrderBook::processPendingEvents() {
         } else if (event.type == MarketEvent::EventType::TRADE) {
             handleTradeEvent(event);
         }
+        ++processed_index;
     }
 }
 
@@ -173,7 +182,7 @@ bool OrderBook::isOrderExists(const std::string& order_id) const {
 }
 
 // 添加订单到订单簿
-void OrderBook::add_order(const L2Order& order) {
+void OrderBook::addOrder(const L2Order& order) {
     auto& book = (order.side == 1) ? bids_ : asks_;
     auto& list = book[order.price];
 
@@ -184,43 +193,32 @@ void OrderBook::add_order(const L2Order& order) {
 }
 
 // 处理成交
-void OrderBook::on_trade(const L2Trade& trade) {
-    auto id_it = order_index_.find(trade.sell_id);
+void OrderBook::onTrade(const L2Trade& trade) {
+    auto reduce_volume = [&](const std::string& id) {
+        auto index_it = order_index_.find(id);
+        if (index_it != order_index_.end()) {
+            index_it->second->volume -= trade.volume;
 
-    if (id_it != order_index_.end()) {
-        id_it->second->volume -= trade.volume;
-
-        if (id_it->second->volume == 0) {
-            // 如果订单量为0, 从订单簿和索引中移除
-            remove_order(trade.sell_id);
-        } else if (id_it->second->volume < 0)
-        {
-            remove_order(trade.sell_id);
-            LOG_WARN(module_name, "[{}] 订单ID:{} 处理后数量为负, 已经移除该订单", 
-                symbol_, trade.sell_id);
+            if (index_it->second->volume == 0) {
+                // 如果订单量为0, 从订单簿和索引中移除
+                removeOrder(id);
+            } else if (index_it->second->volume < 0)
+            {
+                removeOrder(id);
+                LOG_WARN(module_name, "[{}] 订单ID:{} 处理后数量为负, 已经移除该订单", 
+                    symbol_, id);
+            }
         }
-    }
+    };
 
-    id_it = order_index_.find(trade.buy_id);
-    if (id_it != order_index_.end()) {
-        id_it->second->volume -= trade.volume;
-
-        if (id_it->second->volume == 0) {
-            // 如果订单量为0, 从订单簿和索引中移除
-            remove_order(trade.buy_id);
-        } else if (id_it->second->volume < 0)
-        {
-            remove_order(trade.buy_id);
-            LOG_WARN(module_name, "[{}] 订单ID:{} 处理后数量为负, 已经移除该订单", 
-                symbol_, trade.buy_id);
-        }
-    }
+    reduce_volume(trade.buy_id);
+    reduce_volume(trade.sell_id);
 
     trade.info();
 }
 
 // 从订单簿中移除订单
-void OrderBook::remove_order(const std::string& order_id) {
+void OrderBook::removeOrder(const std::string& order_id) {
     // 查找订单, 返回键值对迭代器
     auto index_it = order_index_.find(order_id);
     if (index_it == order_index_.end()) {
@@ -249,7 +247,7 @@ void OrderBook::remove_order(const std::string& order_id) {
         // 从价格档位列表中移除订单,从索引中移除订单
         price_level_list.erase(order_iter);
         order_index_.erase(index_it);
-        
+
         // 如果该价格档位没有订单了, 从订单簿中移除该价格档位
         if (price_level_list.empty()) {
             book.erase(price_it);
@@ -262,7 +260,7 @@ void OrderBook::remove_order(const std::string& order_id) {
 
 
 // 打印买卖盘前5档
-void OrderBook::print_top5() const {
+void OrderBook::printTop5() const {
     LOG_INFO(module_name, "===== OrderBook Top 5 for {} =====", symbol_);
 
     // 打印卖盘（asks）—— 价格从低到高，取前5档

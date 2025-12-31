@@ -18,7 +18,7 @@ public:
     explicit OrderBook(const std::string& symbol);
     ~OrderBook();
 
-    void pushEvent(const MarketEvent event);
+    void pushEvent(const MarketEvent& event);
     void stop();
 private:
     void runProcessingLoop();
@@ -27,10 +27,10 @@ private:
     void processPendingEvents();
 
     bool isOrderExists(const std::string& order_id) const;
-    void add_order(const L2Order& order);
-    void on_trade(const L2Trade& trade);
-    void remove_order(const std::string& order_id);
-    void print_top5() const;
+    void addOrder(const L2Order& order);
+    void onTrade(const L2Trade& trade);
+    void removeOrder(const std::string& order_id);
+    void printTop5() const;
 
     // 订单簿相关数据结构
     struct OrderRef {

@@ -1,5 +1,4 @@
-#ifndef LOG_H
-#define LOG_H
+#pragma once
 
 #include <spdlog/spdlog.h>
 
@@ -13,5 +12,3 @@ std::shared_ptr<class spdlog::logger> get_module_logger(const char* module_name)
 #define LOG_WARN(module, ...)    get_module_logger(module)->warn(__VA_ARGS__)
 #define LOG_ERROR(module, ...)   get_module_logger(module)->error(__VA_ARGS__)
 #define LOG_DEBUG(module, ...)   get_module_logger(module)->debug(__VA_ARGS__)
-
-#endif
