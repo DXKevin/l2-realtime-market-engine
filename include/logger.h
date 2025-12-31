@@ -1,11 +1,12 @@
 #pragma once
 
 #include <spdlog/spdlog.h>
+#include <memory>
 
 bool init_log_system(const char* filename = "logs/app.log");
 
 // 获取模块的日志器
-std::shared_ptr<class spdlog::logger> get_module_logger(const char* module_name);
+std::shared_ptr<spdlog::logger> get_module_logger(const char* module_name);
 
 // 快捷宏（在任何cpp文件中使用）
 #define LOG_INFO(module, ...)    get_module_logger(module)->info(__VA_ARGS__)

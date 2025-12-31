@@ -7,7 +7,7 @@
 #include <vector>
 #include <cctype>
 
-#include "Logger.h"
+#include "logger.h"
 #include "DataStruct.h"
 
 
@@ -50,6 +50,16 @@ inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_v
     constexpr size_t TRADE_FIELDS  = L2FieldCount<L2Trade>::field_num;
 
     std::vector<MarketEvent> event_list;
+    
+    if (data.empty()) {
+        return event_list;
+    }
+    
+    if (type != "order" && type != "trade") {
+        LOG_WARN("L2Parser", "Unknown type: {}", std::string(type));
+        return event_list;
+    }
+
     size_t pos = 0;
 
     while (pos < data.size()) {
@@ -76,31 +86,18 @@ inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_v
                     if (fields.size() == ORDER_FIELDS) {
                         event_list.emplace_back(L2Order(fields));
                     } else {
-                        LOG_WARN("L2Parser", "order字段数不匹配");
+                        LOG_WARN("L2Parser", "order字段数不匹配: expected {}, got {}", ORDER_FIELDS, fields.size());
                     }
                 } else if (type == "trade"){
                     if (fields.size() == TRADE_FIELDS) {
                         event_list.emplace_back(L2Trade(fields));
                     } else {
-                        LOG_WARN("L2Parser", "trade字段数不匹配");
+                        LOG_WARN("L2Parser", "trade字段数不匹配: expected {}, got {}", TRADE_FIELDS, fields.size());
                     }
                 }
             }
             start = end + 1;  // 跳过 '#'
         }
-
-        // 处理最后一个 # 后的部分（如果没有 #，就是整个 full_record）
-        // if (start < current.size()) {
-        //     std::string_view last_order = current.substr(start);
-        //     if (!last_order.empty()) {
-        //         auto fields = splitByComma(last_order);
-        //         if (fields.size() == EXPECTED_FIELDS) {
-        //             data_list.emplace_back(constructor(fields));
-        //         } else {
-        //             LOG_WARN("L2Parser", "字段数不匹配");
-        //         }
-        //     }
-        // }
 
         pos = close + 1; // 移动到 '>' 之后
     }

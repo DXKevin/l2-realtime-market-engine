@@ -1,6 +1,10 @@
 #include <iostream>
 
-#include "Logger.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#include "logger.h"
 #include "L2TcpSubscriber.h"
 #include "ConfigReader.h"
 #include "L2Parser.h"
@@ -13,7 +17,9 @@ std::unordered_map<std::string, std::unique_ptr<OrderBook>> g_orderbooks;
 
 int main() {
     try{
+#ifdef _WIN32
         SetConsoleOutputCP(CP_UTF8); // 设置控制台为UTF-8编码以支持中文输出，防止exe运行时命令行输出乱码
+#endif
 
         init_log_system("logs/app.log");
         ConfigReader config("config.ini");

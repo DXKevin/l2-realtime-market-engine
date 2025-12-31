@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 class ConfigReader {
 public:
@@ -11,7 +12,7 @@ public:
         load(filename);
     }
 
-    std::string get(const std::string& section, const std:: string& key, const std::string& default_val = "") const {
+    std::string get(const std::string& section, const std::string& key, const std::string& default_val = "") const {
         auto it = data_.find(section + "." + key);
         return (it != data_.end()) ? it->second : default_val;
     }
@@ -21,7 +22,7 @@ public:
         if (val.empty()) return default_val;
         try {
             return std::stoi(val);
-        } catch (...) {
+        } catch (const std::exception&) {
             return default_val;
         }
     }
@@ -50,6 +51,7 @@ private:
             // 检查是否是 [section]
             if (line.front() == '[' && line.back() == ']') {
                 current_section = line.substr(1, line.size() - 2);
+                trim(current_section);
                 continue;
             }
 

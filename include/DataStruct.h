@@ -5,7 +5,7 @@
 #include <cctype>
 #include <charconv>
 #include <variant>
-#include "Logger.h"
+#include "logger.h"
 
 
 // 辅助函数：安全地将 string_view 转为 int（仅用于小整数）
@@ -18,10 +18,8 @@ inline int svToInt(std::string_view sv) {
     std::from_chars_result res = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
     // 如果解析失败（如包含非数字字符），返回 0
-    // 你也可以选择抛出异常或记录日志，根据需求调整
     if (res.ec == std::errc::invalid_argument || res.ec == std::errc::result_out_of_range) {
-        // 可选：记录警告
-        LOG_WARN("L2Parser", "Invalid integer: {}", sv);
+        LOG_WARN("L2Parser", "Invalid integer: {}", std::string(sv));
         return 0;
     }
 

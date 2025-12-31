@@ -197,10 +197,15 @@ void OrderBook::addOrder(const L2Order& order) {
 // 处理成交
 void OrderBook::onTrade(const L2Trade& trade) {
     auto reduce_volume = [&](const std::string& id) {
+        if (id.empty()) {
+            return;
+        }
+        
         auto index_it = order_index_.find(id);
         if (index_it == order_index_.end()) {
             return;
         }
+        
         // 取成交量和挂单量较小值进行减少, 防止聚合订单簿与总订单簿不一致
         int reduce_fix = std::min(trade.volume, index_it->second->volume);
         index_it->second->volume -= reduce_fix;
