@@ -166,7 +166,6 @@ void OrderBook::processPendingEvents() {
     
     const size_t max_process = 5; // 每次最多处理5个待处理事件
     size_t processed_index = 0;
-    size_t initial_size = pending_events_.size();
 
     while (processed_index < max_process && !pending_events_.empty()) {
         MarketEvent event = std::move(pending_events_.front());
