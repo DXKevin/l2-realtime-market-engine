@@ -189,11 +189,6 @@ std::string L2TcpSubscriber::recvData() {
         return "";
     }
 
-    if (n < 0) {
-        LOG_ERROR(module_name, "TCP 接收数据返回负值 <{}:{}>", host_, port_);
-        return "";
-    }
-
     if (isContainStrFlag(buffer, n, "Login successful")) {
         LOG_INFO(module_name, "登录成功");
         return "1";
