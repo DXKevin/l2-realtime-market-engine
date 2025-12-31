@@ -2,8 +2,10 @@
 #include "logger.h"
 #include <iostream>
 
-
 static const char* module_name = "OrderBook";
+
+// 待处理事件队列大小阈值
+constexpr size_t PENDING_EVENTS_THRESHOLD = 100;
 
 
 OrderBook::OrderBook(const std::string& symbol) : symbol_(symbol) {
@@ -180,7 +182,7 @@ void OrderBook::processPendingEvents() {
     }
     
     // 如果待处理队列过大，记录警告
-    if (pending_events_.size() > 100) {
+    if (pending_events_.size() > PENDING_EVENTS_THRESHOLD) {
         LOG_WARN(module_name, "[{}] 待处理事件队列过大: {} events, processed {} events this round", 
             symbol_, pending_events_.size(), processed_index);
     }

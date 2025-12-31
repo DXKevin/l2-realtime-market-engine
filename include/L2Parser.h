@@ -46,12 +46,12 @@ struct L2FieldCount {
 
 template<>
 struct L2FieldCount<L2Order> {
-    static constexpr size_t field_num = 11; // 11 个字段
+    static constexpr size_t field_num = 11;
 };
 
 template<>
 struct L2FieldCount<L2Trade> {
-    static constexpr size_t field_num = 12; // 12 个字段
+    static constexpr size_t field_num = 12;
 };
 
 

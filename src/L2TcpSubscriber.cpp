@@ -3,6 +3,7 @@
 #include <sstream>
 #include <cassert>
 #include <variant>
+#include <cerrno>
 
 #include "L2TcpSubscriber.h"
 #include "logger.h"
@@ -163,7 +164,8 @@ void L2TcpSubscriber::sendData(const std::string& message) {
         int error_code = WSAGetLastError();
         LOG_ERROR(module_name, "TCP 发送数据失败 <{}:{}>, error code: {}", host_, port_, error_code);
 #else
-        LOG_ERROR(module_name, "TCP 发送数据失败 <{}:{}>", host_, port_);
+        int error_code = errno;
+        LOG_ERROR(module_name, "TCP 发送数据失败 <{}:{}>, error code: {}", host_, port_, error_code);
 #endif
     } else if (sent != static_cast<int>(message.size())) {
         LOG_WARN(module_name, "TCP 部分发送 <{}:{}>, sent {} of {} bytes", host_, port_, sent, message.size());
@@ -179,7 +181,8 @@ std::string L2TcpSubscriber::recvData() {
         int error_code = WSAGetLastError();
         LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>, error code: {}", host_, port_, error_code);
 #else
-        LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>", host_, port_);
+        int error_code = errno;
+        LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>, error code: {}", host_, port_, error_code);
 #endif
         return "";
     }
