@@ -1,0 +1,65 @@
+#pragma once
+#include <string>
+#include <map>
+#include <list>
+#include <thread>
+#include <atomic>
+#include <unordered_map>
+#include <deque>
+#include <functional>
+#include <unordered_set>
+
+#include "concurrentqueue/blockingconcurrentqueue.h"
+#include "DataStruct.h"
+
+
+class OrderBook {
+public:
+    explicit OrderBook(const std::string& symbol);
+    ~OrderBook();
+
+    void pushEvent(const MarketEvent event);
+    void stop();
+private:
+    void runProcessingLoop();
+    void ProcessEvent(const MarketEvent& event);
+    void handleOrderEvent(const MarketEvent& event);
+    void handleTradeEvent(const MarketEvent& event);
+
+
+    bool isOrderExists(const std::string& order_id) const;
+    void add_order(const L2Order& order);
+    void on_trade(const L2Trade& trade);
+    void remove_order(const std::string& order_id);
+    void print_top5() const;
+
+    // 订单簿相关数据结构
+    struct OrderRef {
+        int volume;
+        int price;
+        int side;
+        std::string id;
+    };
+    
+    std::string symbol_;
+
+    // 按价格分组的买卖订单簿
+    std::map<int,std::list<OrderRef>> bids_;
+    std::map<int,std::list<OrderRef>> asks_;
+
+    // 暂存待处理事件
+    std::deque<MarketEvent> pending_events_; 
+
+    // 暂存市价单ID
+    std::unordered_set<std::string> null_price_order_ids_;
+
+    // 快速查找订单
+    std::unordered_map<std::string, OrderRef*> order_index_;
+
+    // 事件队列 - MPSC
+    moodycamel::BlockingConcurrentQueue<MarketEvent> event_queue;
+    
+    // 工作线程
+    std::thread processing_thread_;
+    std::atomic<bool> running_{true};
+};

@@ -2,10 +2,12 @@
 #include <iostream>
 #include <sstream>
 #include <cassert>
+#include <variant>
 
 #include "L2TcpSubscriber.h"
 #include "logger.h"
 #include "L2Parser.h"
+#include "DataStruct.h"
 
 #ifdef _WIN32
     #include <ws2tcpip.h>
@@ -15,6 +17,14 @@
 #endif
 
 static const char* module_name = "L2TcpSubscriber";
+
+inline const std::string& getSymbol(const MarketEvent& evt) {
+    if (evt.type == MarketEvent::EventType::ORDER) {
+        return std::get<L2Order>(evt.data).symbol;
+    } else {
+        return std::get<L2Trade>(evt.data).symbol;
+    }
+}
 
 // -----------------------
 // WinSock 初始化（单例）
@@ -47,8 +57,10 @@ L2TcpSubscriber::L2TcpSubscriber(
     const std::string& host,
     int port,
     const std::string& username,
-    const std::string& password
-) : host_(host), port_(port), username_(username), password_(password)  {
+    const std::string& password,
+    const std::string& type,
+    std::unordered_map<std::string, std::unique_ptr<OrderBook>>* orderbooks
+) : host_(host), port_(port), username_(username), password_(password), type_(type), orderbooks_(orderbooks) {
 }
 
 L2TcpSubscriber::~L2TcpSubscriber() {
@@ -184,6 +196,7 @@ bool L2TcpSubscriber::isContainStrFlag(const char* data, size_t len, const char 
 
 void L2TcpSubscriber::receiveLoop() {
     LOG_INFO(module_name, "启动接收线程 <{}:{}>", host_, port_);
+    
     while (running_) {
         std::string data = recvData();
 
@@ -195,17 +208,20 @@ void L2TcpSubscriber::receiveLoop() {
             continue; // 登录或订阅成功或心跳包，跳过处理
         }
 
-        LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
+        //LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
 
-        auto orders = parseL2Data<L2Order>(data);
-
-        for (const auto& order : orders) {
-            LOG_INFO(module_name,"index:{}, symbol:{}, volume:{}, side:{}",
-                order.index,
-                order.symbol,
-                order.volume,
-                order.side
-            );
+        auto events = parseL2Data(data, type_);
+        
+        for (const auto& event : events) {
+            const std::string& symbol = getSymbol(event);
+            auto it = orderbooks_->find(symbol);
+            if (it != orderbooks_->end()) {
+                it->second->pushEvent(event);
+            } else {
+                LOG_WARN(module_name, "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
+            }
         }
     }
 }
+
+

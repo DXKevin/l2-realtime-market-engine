@@ -6,6 +6,9 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <unordered_map>
+
+#include "OrderBook.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -20,7 +23,9 @@ public:
         const std::string& host,
         int port,
         const std::string& username,
-        const std::string& password
+        const std::string& password,
+        const std::string& type,
+        std::unordered_map<std::string, std::unique_ptr<OrderBook>>* orderbooks
     );
 
     ~L2TcpSubscriber();
@@ -44,10 +49,13 @@ private:
     int port_;
     std::string username_;
     std::string password_;
+    std::string type_;
 
     std::atomic<bool> running_{false};
     std::thread recvThread_;
     SOCKET sock_{INVALID_SOCKET};
+
+    std::unordered_map<std::string, std::unique_ptr<OrderBook>>* orderbooks_; // 指向全局订单簿映射
 };
 
 #endif // L2_TCP_SUBSCRIBER_H
