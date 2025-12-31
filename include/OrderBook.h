@@ -53,7 +53,7 @@ private:
     std::unordered_set<std::string> null_price_order_ids_;
 
     // 快速查找订单
-    std::unordered_map<std::string, OrderRef*> order_index_;
+    std::unordered_map<std::string, std::list<OrderRef>::iterator> order_index_;
 
     // 事件队列 - MPSC
     moodycamel::BlockingConcurrentQueue<MarketEvent> event_queue;

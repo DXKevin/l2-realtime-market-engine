@@ -178,7 +178,7 @@ void OrderBook::add_order(const L2Order& order) {
     auto& list = book[order.price];
 
     list.push_back({order.volume, order.price, order.side, order.id});
-    order_index_[order.id] = &list.back();
+    order_index_[order.id] = std::prev(list.end());
 
     order.info();
 }
@@ -222,18 +222,18 @@ void OrderBook::on_trade(const L2Trade& trade) {
 // 从订单簿中移除订单
 void OrderBook::remove_order(const std::string& order_id) {
     // 查找订单, 返回键值对迭代器
-    auto id_it = order_index_.find(order_id);
-    if (id_it == order_index_.end()) {
+    auto index_it = order_index_.find(order_id);
+    if (index_it == order_index_.end()) {
         // 未找到订单
         return;
     }
 
     // 获取订单引用指针
-    OrderRef* order_ptr = id_it->second;
+    auto order_iter = index_it->second;
 
     // 取出订单信息
-    int price = order_ptr->price;
-    int side = order_ptr->side;
+    int price = order_iter->price;
+    int side = order_iter->side;
 
     // 拿到买方盘口或者卖方盘口
     auto& book = (side == 1) ? bids_ : asks_;
@@ -246,22 +246,10 @@ void OrderBook::remove_order(const std::string& order_id) {
     } else {
         auto& price_level_list = price_it->second;
 
-        // 找到目标订单的迭代器
-        auto target_it = std::find_if(
-            price_level_list.begin(),
-            price_level_list.end(),
-            [order_ptr](const OrderRef& o) { return &o == order_ptr; }
-        );
-        
-        if (target_it == price_level_list.end()) {
-            // 未找到订单，数据异常
-            return;
-        }
-
         // 从价格档位列表中移除订单,从索引中移除订单
-        price_level_list.erase(target_it);
-        order_index_.erase(id_it);
-
+        price_level_list.erase(order_iter);
+        order_index_.erase(index_it);
+        
         // 如果该价格档位没有订单了, 从订单簿中移除该价格档位
         if (price_level_list.empty()) {
             book.erase(price_it);
