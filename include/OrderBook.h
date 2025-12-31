@@ -22,10 +22,9 @@ public:
     void stop();
 private:
     void runProcessingLoop();
-    void ProcessEvent(const MarketEvent& event);
     void handleOrderEvent(const MarketEvent& event);
     void handleTradeEvent(const MarketEvent& event);
-
+    void processPendingEvents();
 
     bool isOrderExists(const std::string& order_id) const;
     void add_order(const L2Order& order);

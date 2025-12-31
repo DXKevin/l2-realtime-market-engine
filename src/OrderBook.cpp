@@ -15,14 +15,21 @@ OrderBook::OrderBook(const std::string& symbol) : symbol_(symbol) {
 }
 
 OrderBook::~OrderBook() {
-    running_ = false;
-    if (processing_thread_.joinable()) {
-        processing_thread_.join();
-    }
+    stop();
 }
 
 void OrderBook::pushEvent(const MarketEvent event) {
     event_queue.enqueue(event);
+}
+
+void OrderBook::stop() {
+    // exchange 设置 running_ 为 false, 并返回之前的值
+    if (running_.exchange(false)) {
+        event_queue.enqueue(MarketEvent{}); // 触发退出
+        if (processing_thread_.joinable()) {
+            processing_thread_.join();
+        }
+    }
 }
 
 // 主线程循环
@@ -34,9 +41,12 @@ void OrderBook::runProcessingLoop() {
         if (!running_) break;
 
         if (evt.type == MarketEvent::EventType::ORDER) {
-            add_order(std::get<L2Order>(evt.data));
+            handleOrderEvent(evt);
+
+            // 有新的委托处理后，尝试处理待处理队列
+            processPendingEvents();
         } else if (evt.type == MarketEvent::EventType::TRADE) {
-            on_trade(std::get<L2Trade>(evt.data));
+            handleTradeEvent(evt);
         }
 
         //print_top5();
@@ -61,6 +71,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
                 return;
             } else {
                 // 未找到订单，加入等待队列
+                pending_events_.push_back(event);
                 return;
             }
 
@@ -99,6 +110,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
                 return;
             } else {
                 // 未找到订单，加入等待队列
+                pending_events_.push_back(event);
                 return;
             }
         } else {
@@ -107,6 +119,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
                 return;
             } else {
                 // 未找到订单，加入等待队列
+                pending_events_.push_back(event);
                 return;
             }
         }
@@ -121,26 +134,38 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
             // 只有一方订单存在于订单簿中, 检查是否有一方为市价单
             if (null_price_order_ids_.find(trade.buy_id) != null_price_order_ids_.end() ||
                 null_price_order_ids_.find(trade.sell_id) != null_price_order_ids_.end()) {
-                // 因为市价单肯定不存在与订单簿中, 那存在的肯定是正常订单, 可以直接处理成交
+                // 因为市价单肯定不存在于订单簿中, 那存在的肯定是正常订单, 可以直接处理成交
                 on_trade(trade);
+
+                // 移除市价单ID
+                null_price_order_ids_.erase(trade.buy_id);
+                null_price_order_ids_.erase(trade.sell_id);
             } else {
                 // 另一方订单不存在且不是市价单, 可能是乱序, 加入等待队列
+                pending_events_.push_back(event);
                 return;
             }
         } else {
             // 双方订单都不存在于订单簿中, 可能是乱序, 加入等待队列
+            pending_events_.push_back(event);
             return;
-        }
-
-
-
-
-        
+        } 
     }
 }
 
+void OrderBook::processPendingEvents() {
+    size_t count = pending_events_.size();
+    for (size_t i = 0; i < count; ++i) {
+        MarketEvent event = pending_events_.front();
+        pending_events_.pop_front();
 
-
+        if (event.type == MarketEvent::EventType::ORDER) {
+            handleOrderEvent(event);
+        } else if (event.type == MarketEvent::EventType::TRADE) {
+            handleTradeEvent(event);
+        }
+    }
+}
 
 // 检查订单是否存在
 bool OrderBook::isOrderExists(const std::string& order_id) const {
