@@ -116,6 +116,11 @@ void L2TcpSubscriber::login(){
         LOG_ERROR(module_name, "TCP 未连接，无法登录 {}:{}", host_, port_);
         return;
     }
+    
+    if (username_.empty() || password_.empty()) {
+        LOG_ERROR(module_name, "用户名或密码为空，无法登录 {}:{}", host_, port_);
+        return;
+    }
 
     std::string loginCmd = "DL," + username_ + "," + password_;
     sendData(loginCmd);
@@ -126,15 +131,38 @@ void L2TcpSubscriber::subscribe(const std::string& symbol) {
         LOG_ERROR(module_name, "TCP 未连接，无法订阅 {}:{}", symbol, port_);
         return;
     }
+    
+    if (symbol.empty()) {
+        LOG_ERROR(module_name, "股票代码为空，无法订阅 {}:{}", host_, port_);
+        return;
+    }
+    
+    if (username_.empty() || password_.empty()) {
+        LOG_ERROR(module_name, "用户名或密码为空，无法订阅 {}:{}", symbol, port_);
+        return;
+    }
 
     std::string subCmd = "DY2," + username_ + "," + password_ + "," + symbol;
     sendData(subCmd);
 }
 
 void L2TcpSubscriber::sendData(const std::string& message) {
+    if (message.empty()) {
+        LOG_WARN(module_name, "尝试发送空消息 <{}:{}>", host_, port_);
+        return;
+    }
+    
+    if (sock_ == INVALID_SOCKET) {
+        LOG_ERROR(module_name, "Socket无效，无法发送数据 <{}:{}>", host_, port_);
+        return;
+    }
+    
     int sent = send(sock_, message.c_str(), static_cast<int>(message.size()), 0);
     if (sent == SOCKET_ERROR) {
-        LOG_ERROR(module_name, "TCP 发送数据失败 <{}:{}>", host_, port_);
+        int error_code = WSAGetLastError();
+        LOG_ERROR(module_name, "TCP 发送数据失败 <{}:{}>, error code: {}", host_, port_, error_code);
+    } else if (sent != static_cast<int>(message.size())) {
+        LOG_WARN(module_name, "TCP 部分发送 <{}:{}>, sent {} of {} bytes", host_, port_, sent, message.size());
     }
 }
 
@@ -142,14 +170,19 @@ std::string L2TcpSubscriber::recvData() {
     char buffer[8192] = {0};
     int n = recv(sock_, buffer, sizeof(buffer) - 1, 0);
 
-
     if (n == SOCKET_ERROR) {
-        LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>", host_, port_);
+        int error_code = WSAGetLastError();
+        LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>, error code: {}", host_, port_, error_code);
         return "";
     }
 
     if (n == 0) {
         LOG_ERROR(module_name, "TCP 连接已关闭 <{}:{}>", host_, port_);
+        return "";
+    }
+
+    if (n < 0) {
+        LOG_ERROR(module_name, "TCP 接收数据返回负值 <{}:{}>", host_, port_);
         return "";
     }
 
