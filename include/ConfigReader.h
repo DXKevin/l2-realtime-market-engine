@@ -1,4 +1,5 @@
 // ConfigReader.h
+// 配置文件读取器 - 支持INI格式配置文件的读取和解析
 #pragma once
 #include <string>
 #include <unordered_map>
@@ -6,17 +7,50 @@
 #include <sstream>
 #include <algorithm>
 
+/**
+ * @class ConfigReader
+ * @brief INI格式配置文件读取器
+ * 
+ * 支持标准INI格式:
+ * [section]
+ * key = value
+ * ; 注释
+ * 
+ * 使用示例:
+ * ConfigReader config("config.ini");
+ * std::string host = config.get("server", "host");
+ * int port = config.getInt("server", "port", 8080);
+ */
 class ConfigReader {
 public:
+    /**
+     * @brief 构造函数，加载配置文件
+     * @param filename 配置文件路径
+     * @throws std::runtime_error 如果文件无法打开
+     */
     explicit ConfigReader(const std::string& filename) {
         load(filename);
     }
 
+    /**
+     * @brief 获取字符串类型的配置值
+     * @param section 配置节名称
+     * @param key 配置键名称
+     * @param default_val 默认值（如果键不存在）
+     * @return 配置值或默认值
+     */
     std::string get(const std::string& section, const std::string& key, const std::string& default_val = "") const {
         auto it = data_.find(section + "." + key);
         return (it != data_.end()) ? it->second : default_val;
     }
 
+    /**
+     * @brief 获取整数类型的配置值
+     * @param section 配置节名称
+     * @param key 配置键名称
+     * @param default_val 默认值（如果键不存在或转换失败）
+     * @return 配置值或默认值
+     */
     int getInt(const std::string& section, const std::string& key, int default_val = 0) const {
         std::string val = get(section, key);
         if (val.empty()) return default_val;

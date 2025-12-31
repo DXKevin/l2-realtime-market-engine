@@ -1,3 +1,5 @@
+// DataStruct.h
+// L2行情数据结构定义 - 支持上交所和深交所L2行情
 #pragma once
 #include <string>
 #include <string_view>
@@ -8,7 +10,11 @@
 #include "logger.h"
 
 
-// 辅助函数：安全地将 string_view 转为 int（仅用于小整数）
+/**
+ * @brief 安全地将 string_view 转为 int
+ * @param sv 待转换的字符串视图
+ * @return 转换后的整数，失败返回0
+ */
 inline int svToInt(std::string_view sv) {
     if (sv.empty()) {
         return 0;
@@ -26,6 +32,13 @@ inline int svToInt(std::string_view sv) {
     return result;
 }
 
+/**
+ * @struct L2Order
+ * @brief L2逐笔委托数据结构
+ * 
+ * 兼容上交所和深交所的逐笔委托格式
+ * 价格单位：0.0001元（需除以10000得到真实价格）
+ */
 struct L2Order {
     int index;          // 推送序号
     std::string symbol; // 合约代码
@@ -79,6 +92,13 @@ struct L2Order {
 
 };
 
+/**
+ * @struct L2Trade
+ * @brief L2逐笔成交数据结构
+ * 
+ * 兼容上交所和深交所的逐笔成交格式
+ * 价格单位：0.0001元（需除以10000得到真实价格）
+ */
 struct L2Trade {
     int index;          // 推送序号
     std::string symbol; // 合约代码
@@ -128,6 +148,12 @@ struct L2Trade {
 };
 
 
+/**
+ * @struct MarketEvent
+ * @brief 市场事件统一封装
+ * 
+ * 使用 std::variant 统一封装委托和成交事件
+ */
 struct MarketEvent {
     enum class EventType { ORDER, TRADE } type;
 
