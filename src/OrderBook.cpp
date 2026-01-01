@@ -34,7 +34,13 @@ void OrderBook::stop() {
 
 // 主线程循环
 void OrderBook::runProcessingLoop() {
-    int count = 0;
+
+    int process_pending_events_count = 0;
+    int print_book_count = 0;
+
+    const int PROCESS_PENDING_EVENTS_INTERVAL = 20; // 每处理 20 笔事件处理一次待处理事件
+    const int PRINT_INTERVAL_EVENTS = 100; // 每处理 100 笔事件打印一次
+
     while (running_) {
         MarketEvent evt;
         event_queue.wait_dequeue(evt);
@@ -44,18 +50,26 @@ void OrderBook::runProcessingLoop() {
         if (evt.type == MarketEvent::EventType::ORDER) {
             handleOrderEvent(evt);
 
-            //每处理10次委托，处理一次待处理事件
-            ++count;
-            if (count == 10) {
+            // 定期处理待处理事件
+            ++process_pending_events_count;
+            if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
                 processPendingEvents();
-                count = 0;
+                process_pending_events_count = 0;
             }
             
         } else if (evt.type == MarketEvent::EventType::TRADE) {
             handleTradeEvent(evt);
         }
 
-        //print_top5();
+        // 检查涨停撤单
+        checkLimitUpWithdrawal();
+
+        // 定期打印订单簿
+        ++print_book_count;
+        if (print_book_count == PRINT_INTERVAL_EVENTS) {
+            printOrderBook(5);
+            print_book_count = 0;
+        }
     }
 }
 
@@ -183,6 +197,7 @@ bool OrderBook::isOrderExists(const std::string& order_id) const {
 
 // 添加订单到订单簿
 void OrderBook::addOrder(const L2Order& order) {
+
     auto& book = (order.side == 1) ? bids_ : asks_;
     auto& list = book[order.price];
 
@@ -196,6 +211,7 @@ void OrderBook::addOrder(const L2Order& order) {
 
 // 处理成交
 void OrderBook::onTrade(const L2Trade& trade) {
+
     auto reduce_volume = [&](const std::string& id) {
         auto index_it = order_index_.find(id);
         if (index_it == order_index_.end()) {
@@ -244,6 +260,7 @@ void OrderBook::onTrade(const L2Trade& trade) {
 
 // 从订单簿中移除订单
 void OrderBook::removeOrder(const std::string& order_id) {
+
     // 查找订单, 返回键值对迭代器
     auto index_it = order_index_.find(order_id);
     if (index_it == order_index_.end()) {
@@ -286,7 +303,8 @@ void OrderBook::removeOrder(const std::string& order_id) {
 
 
 void OrderBook::printOrderBook(int level_num) const {
-    LOG_INFO(module_name, "===== OrderBook Top 5 for {} =====", symbol_);
+
+    LOG_INFO(module_name, "===== OrderBook Top {} for {} =====", level_num, symbol_);
 
     // 卖盘（Asks）：价格从低到高（asks_ 是升序 map）
     LOG_INFO(module_name, "Asks (Sell):");
@@ -315,5 +333,32 @@ void OrderBook::printOrderBook(int level_num) const {
     LOG_INFO(module_name, "==================================");
 }
 
+void OrderBook::checkLimitUpWithdrawal() {
 
+    // 如果没有买盘则直接返回
+    if (bid_volume_at_price_.empty()) {
+        return;
+    }
+
+    auto best_bid_it = bid_volume_at_price_.begin();
+    int current_volume  = best_bid_it->second;
+    int current_price  = best_bid_it->first;
+
+    // 更新最大买一量
+    if (current_volume > max_bid_volume_){
+        max_bid_volume_ = current_volume;
+        LOG_INFO(module_name, "[{}] 创历史最高买一量: {}, 价格: {}", symbol_, max_bid_volume_, current_price / 10000.0);
+        
+        return; // 若发生更新, 肯定是买盘增加了, 直接返回
+    }
+
+    // 检查是否触发涨停撤单监测条件
+    if (max_bid_volume_ > 0 && current_volume * 3 < max_bid_volume_ * 2) {
+        
+        // 放发生交易请求的部分
+
+        LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前买一量 {} 低于历史最高买一量 {} 的 2/3", 
+            symbol_, current_volume, max_bid_volume_);
+    }
+}
 

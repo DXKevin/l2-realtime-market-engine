@@ -32,6 +32,8 @@ private:
     void removeOrder(const std::string& order_id);
     void printOrderBook(int level_num) const;
 
+    void checkLimitUpWithdrawal();
+
     // 订单簿相关数据结构
     struct OrderRef {
         int volume;
@@ -41,6 +43,8 @@ private:
     };
     
     std::string symbol_;
+    
+    int max_bid_volume_ = 0; // 历史最高买一量
 
     // 价格 → 该档位总挂单量
     std::map<int, int> bid_volume_at_price_;
