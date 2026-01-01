@@ -291,8 +291,8 @@ void OrderBook::printOrderBook(int level_num) const {
     // 卖盘（Asks）：价格从低到高（asks_ 是升序 map）
     LOG_INFO(module_name, "Asks (Sell):");
     int ask_count = 0;
-    for (auto it = ask_volume_at_price_.rbegin(); 
-         it != ask_volume_at_price_.rend() && ask_count < level_num; 
+    for (auto it = ask_volume_at_price_.begin(); 
+         it != ask_volume_at_price_.end() && ask_count < level_num; 
          ++it) {
         double price = it->first / 10000.0;
         int total_vol = it->second;
