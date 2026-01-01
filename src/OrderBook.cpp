@@ -303,8 +303,8 @@ void OrderBook::printOrderBook(int level_num) const {
     // 买盘（Bids）：价格从高到低（bid_volume_at_price_ 是升序 map，需反向）
     LOG_INFO(module_name, "Bids (Buy):");
     int bid_count = 0;
-    for (auto it = bid_volume_at_price_.begin(); 
-         it != bid_volume_at_price_.end() && bid_count < level_num; 
+    for (auto it = bid_volume_at_price_.rbegin(); 
+         it != bid_volume_at_price_.rend() && bid_count < level_num; 
          ++it) {
         double price = it->first / 10000.0;
         int total_vol = it->second;
