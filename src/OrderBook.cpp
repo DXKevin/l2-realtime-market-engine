@@ -55,7 +55,7 @@ void OrderBook::runProcessingLoop() {
             handleTradeEvent(evt);
         }
 
-        //print_top5();
+        printOrderBook(5);
     }
 }
 
@@ -286,7 +286,7 @@ void OrderBook::removeOrder(const std::string& order_id) {
 
 
 void OrderBook::printOrderBook(int level_num) const {
-    LOG_INFO(module_name, "===== OrderBook Top 5 for {} =====", symbol_);
+    LOG_INFO(module_name, "===== OrderBook Top {} for {} =====", level_num, symbol_);
 
     // 卖盘（Asks）：价格从低到高（asks_ 是升序 map）
     LOG_INFO(module_name, "Asks (Sell):");
@@ -304,7 +304,7 @@ void OrderBook::printOrderBook(int level_num) const {
     LOG_INFO(module_name, "Bids (Buy):");
     int bid_count = 0;
     for (auto it = bid_volume_at_price_.begin(); 
-         it != bid_volume_at_price_.end() && bid_count < 5; 
+         it != bid_volume_at_price_.end() && bid_count < level_num; 
          ++it) {
         double price = it->first / 10000.0;
         int total_vol = it->second;
