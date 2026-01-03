@@ -1,9 +1,12 @@
 #include "SendServer.h"
+#include "Logger.h"
 
 SendServer::SendServer(const std::string& pipe_name)
     : full_pipe_name_("\\\\.\\pipe\\" + pipe_name) {
     InitializeCriticalSection(&mutex_);
     server_thread_ = std::thread(&SendServer::runServer, this);
+
+    LOG_INFO("SendServer", "初始化消息服务器" + pipe_name);
 }
 
 SendServer::~SendServer() {
@@ -41,9 +44,22 @@ void SendServer::runServer() {
         client_handle_ = hPipe;
         LeaveCriticalSection(&mutex_);
         
-        // 保持连接（直到客户端断开或退出）
+        // 保持连接，同时检测客户端是否断开
         while (running_) {
-            Sleep(200);
+            // 检测客户端是否断开 - 尝试写入0字节
+            DWORD bytes_written;
+            BOOL result = WriteFile(hPipe, "", 0, &bytes_written, NULL);
+            
+            if (!result) {
+                DWORD error = GetLastError();
+                // 检查常见断开错误
+                if (error == ERROR_BROKEN_PIPE || 
+                    error == ERROR_NO_DATA || 
+                    error == ERROR_PIPE_NOT_CONNECTED) {
+                    break; // 客户端已断开，退出内部循环
+                }
+            }
+            Sleep(1000);
         }
 
         disconnectClient();

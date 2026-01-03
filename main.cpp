@@ -1,21 +1,28 @@
 #include <iostream>
+#include <memory>
 
 #include "Logger.h"
 #include "L2TcpSubscriber.h"
 #include "ConfigReader.h"
 #include "L2Parser.h"
 #include "OrderBook.h"
+#include "SendServer.h"
+#include "ReceiveServer.h"
 
-static const char* module_name = "Main";
 
-std::unordered_map<std::string, std::unique_ptr<OrderBook>> g_orderbooks;
 
 
 int main() {
-    try{
+    static const char* module_name = "Main";
+
+    try {
+        // 初始化设置
         SetConsoleOutputCP(CP_UTF8); // 设置控制台为UTF-8编码以支持中文输出，防止exe运行时命令行输出乱码
 
+        // 初始化日志系统
         init_log_system("logs/app.log");
+
+        // 读取配置文件
         ConfigReader config("config.ini");
 
         std::string host = config.get("server", "host");
@@ -26,20 +33,74 @@ int main() {
         std::string password = config.get("auth", "password");
         LOG_INFO(module_name, "配置文件加载完成");
 
-        // std::string symbol = "600376.SH";
-        std::string symbol = "002050.SZ";
-        g_orderbooks[symbol] = std::make_unique<OrderBook>(symbol);
+        // 初始化全局数据结构: orderBooksPtr存放股票代码到OrderBook实例的映射, stockWithAccountsPtr存放股票代码到账户列表的映射
+        auto orderBooksPtr = std::make_shared<std::unordered_map<std::string, std::unique_ptr<OrderBook>>>();
+        auto stockWithAccountsPtr = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
 
-        L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", &g_orderbooks);
-        L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", &g_orderbooks);
+         // 初始化行情服务器连接
+        L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
+        L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
 
-        if (OrderSubscriber.connect()) {
-            OrderSubscriber.subscribe(symbol);
-        }
+        // 登录行情服务器
+        OrderSubscriber.connect();
+        TradeSubscriber.connect(); 
 
-        if (TradeSubscriber.connect()) {
-            TradeSubscriber.subscribe(symbol);
-        }
+        // 初始化交易信号发送服务器
+        auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
+            
+        // 前端消息接收服务器回调函数
+        auto handleMessage = [
+            stockWithAccountsPtr,
+            orderBooksPtr,
+            sendServerPtr,
+            &OrderSubscriber,
+            &TradeSubscriber
+        ] (const std::string& message) {
+            std::string symbol = parseAndStoreStockAccount(message, stockWithAccountsPtr);
+            
+            if (symbol.empty()) {
+                LOG_WARN(module_name, "从前端消息解析出股票代码为空: {}", message);
+                return;
+            }
+
+            (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+                symbol, 
+                sendServerPtr,
+                stockWithAccountsPtr
+            );
+
+            OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
+            TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
+
+        };
+
+        // 初始化接收前端消息服务器
+        ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
+
+
+       
+    
+        // std::string test_msg = "<000001.SZ#10002000,231312,account3>";
+        // parseAndStoreStockAccount(test_msg, stockWithAccountsPtr);
+        // LOG_INFO(module_name, "{}", formatStockAccount("000001.SZ", stockWithAccountsPtr));
+
+        // std::string symbol = "002050.SZ";
+        
+        // OrderBooksPtr->operator[](symbol) = std::make_unique<OrderBook>(
+        //     symbol, 
+        //     sendServerPtr,
+        //     stockWithAccountsPtr
+        // );
+
+        
+
+        // if (OrderSubscriber.connect()) {
+        //     OrderSubscriber.subscribe(symbol);
+        // }
+
+        // if (TradeSubscriber.connect()) {
+        //     TradeSubscriber.subscribe(symbol);
+        // }
 
         // std::string test_data = "<157,600693.SH,103659530,14494293,190000,100,2,2,9100941,14494293,2,#><158,600693.SH,103659530,14494299,182000,100,2,1,9100946,14494299,2,#><159,600693.SH,103659570,14494369,182100,400,2,1,9100980,14494369,2,#><160,600693.SH,103659600,14494454,190000,2400,2,2,9101018,14494454,2,#><161,600693.SH,103659620,14494490,187000,100,2,2,9101037,14494490,2,#>";
         // auto events = parseL2Data(test_data, "order");

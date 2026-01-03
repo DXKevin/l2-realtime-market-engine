@@ -59,8 +59,8 @@ L2TcpSubscriber::L2TcpSubscriber(
     const std::string& username,
     const std::string& password,
     const std::string& type,
-    std::unordered_map<std::string, std::unique_ptr<OrderBook>>* orderbooks
-) : host_(host), port_(port), username_(username), password_(password), type_(type), orderbooks_(orderbooks) {
+    std::shared_ptr<std::unordered_map<std::string, std::unique_ptr<OrderBook>>> orderbooks_ptr
+) : host_(host), port_(port), username_(username), password_(password), type_(type), orderbooks_ptr_(orderbooks_ptr) {
 }
 
 L2TcpSubscriber::~L2TcpSubscriber() {
@@ -214,8 +214,8 @@ void L2TcpSubscriber::receiveLoop() {
         
         for (const auto& event : events) {
             const std::string& symbol = getSymbol(event);
-            auto it = orderbooks_->find(symbol);
-            if (it != orderbooks_->end()) {
+            auto it = orderbooks_ptr_->find(symbol);
+            if (it != orderbooks_ptr_->end()) {
                 it->second->pushEvent(event);
             } else {
                 LOG_WARN(module_name, "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);

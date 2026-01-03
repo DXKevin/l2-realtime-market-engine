@@ -8,7 +8,9 @@
 
 class SendServer {
 public:
-    explicit SendServer(const std::string& pipe_name);
+    explicit SendServer(
+        const std::string& pipe_name
+    );
     ~SendServer();
 
     bool send(const std::string& message); // 主动推送

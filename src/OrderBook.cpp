@@ -6,11 +6,28 @@
 static const char* module_name = "OrderBook";
 
 
-OrderBook::OrderBook(const std::string& symbol) : symbol_(symbol) {
+OrderBook::OrderBook(
+    const std::string& symbol, 
+    std::shared_ptr<SendServer> send_server,
+    std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts
+) : 
+    symbol_(symbol), send_server_(send_server), stock_with_accounts_(stock_with_accounts) {
+
     if (symbol_.empty()){
         LOG_ERROR(module_name, "OrderBook 无法用空股票代码初始化~");
         return;
     };
+
+    if (send_server_ == nullptr){
+        LOG_ERROR(module_name, "OrderBook 初始化时 SendServer 为空指针~");
+        return;
+    };
+
+    if (stock_with_accounts_ == nullptr){
+        LOG_ERROR(module_name, "OrderBook 初始化时 stock_with_accounts 为空指针~");
+        return;
+    }
+
     processing_thread_ = std::thread(&OrderBook::runProcessingLoop, this);
 }
 
@@ -356,6 +373,9 @@ void OrderBook::checkLimitUpWithdrawal() {
     if (max_bid_volume_ > 0 && current_volume * 3 < max_bid_volume_ * 2) {
         
         // 放发生交易请求的部分
+        if (send_server_) {
+            send_server_->send("Limit up withdrawal detected for " + symbol_);
+        }
 
         LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前买一量 {} 低于历史最高买一量 {} 的 2/3", 
             symbol_, current_volume, max_bid_volume_);

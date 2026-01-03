@@ -107,3 +107,66 @@ inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_v
 
     return event_list;
 }
+
+
+inline std::string formatStockAccount(
+    const std::string& stock_symbol,
+    const std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts_ptr
+) {
+    auto it = stock_with_accounts_ptr->find(stock_symbol);
+
+    if (it == stock_with_accounts_ptr->end()) {
+        return "";
+    }
+
+    std::string result = "<" + stock_symbol + "#";
+
+    const auto& accounts = it->second;
+    for (size_t i = 0; i < accounts.size(); ++i) {
+        if (i > 0) {
+            result += ",";
+        }
+
+        result += accounts[i];
+
+    }
+
+    result += ">";
+
+    return result;
+}
+
+inline std::string parseAndStoreStockAccount(
+    const std::string_view message,
+    const std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stockWithAccountsPtr
+) {
+    if (message.size() < 3 || message.front() != '<' || message.back() != '>') {
+        // 格式不合法
+        LOG_WARN("L2Parser", "收到格式不合法的消息: {}", message);
+        return "";
+    }
+
+    // 去掉 < 和 >
+    std::string_view content = message.substr(1, message.size() - 2);
+
+    // 查找 '#' 的位置
+    size_t pos = content.find('#');
+    if (pos == std::string_view::npos) {
+        LOG_WARN("L2Parser", "收到格式不合法的消息, 缺少 #: {}", message);
+        return "";
+    }
+
+    std::string_view symbol = content.substr(0, pos);
+    std::string_view accountsStr = content.substr(pos + 1);
+
+    std::vector<std::string> result;
+    auto accounts_views = splitByComma(accountsStr);
+    for (const auto& acc_view : accounts_views) {
+        result.emplace_back(acc_view);
+    }
+
+    // 写入共享 map（注意：多线程需加锁！）
+    (*stockWithAccountsPtr)[std::string(symbol)] = std::move(result); 
+
+    return std::string(symbol);
+}

@@ -11,11 +11,16 @@
 
 #include "concurrentqueue/blockingconcurrentqueue.h"
 #include "DataStruct.h"
+#include "SendServer.h"
 
 
 class OrderBook {
 public:
-    explicit OrderBook(const std::string& symbol);
+    explicit OrderBook(
+        const std::string& symbol,
+        std::shared_ptr<SendServer> send_server,
+        std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts
+    );
     ~OrderBook();
 
     void pushEvent(const MarketEvent& event);
@@ -69,4 +74,8 @@ private:
     // 工作线程
     std::thread processing_thread_;
     std::atomic<bool> running_{true};
+
+    // 外部关联数据
+    std::shared_ptr<SendServer> send_server_;
+    std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts_;
 };

@@ -4,6 +4,8 @@
 ReceiveServer::ReceiveServer(const std::string& pipe_name, MessageHandler handler)
     : full_pipe_name_("\\\\.\\pipe\\" + pipe_name), on_message_(handler) {
     server_thread_ = std::thread(&ReceiveServer::runServer, this);
+
+    LOG_INFO("SendServer", "初始化消息服务器" + pipe_name);
 }
 
 ReceiveServer::~ReceiveServer() {
