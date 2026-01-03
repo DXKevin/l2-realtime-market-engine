@@ -37,45 +37,55 @@ int main() {
         auto orderBooksPtr = std::make_shared<std::unordered_map<std::string, std::unique_ptr<OrderBook>>>();
         auto stockWithAccountsPtr = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
 
-         // 初始化行情服务器连接
-        L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
-        L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
+        //  // 初始化行情服务器连接
+        // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
+        // L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
 
-        // 登录行情服务器
-        OrderSubscriber.connect();
-        TradeSubscriber.connect(); 
+        // // 登录行情服务器
+        // OrderSubscriber.connect();
+        // TradeSubscriber.connect(); 
 
         // 初始化交易信号发送服务器
         auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
+        while (true){
+            sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
+            Sleep(1);
+        }
+
+        // Sleep(5000); // 等待管道服务器启动完成
+        // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
+
+        
             
-        // 前端消息接收服务器回调函数
-        auto handleMessage = [
-            stockWithAccountsPtr,
-            orderBooksPtr,
-            sendServerPtr,
-            &OrderSubscriber,
-            &TradeSubscriber
-        ] (const std::string& message) {
-            std::string symbol = parseAndStoreStockAccount(message, stockWithAccountsPtr);
             
-            if (symbol.empty()) {
-                LOG_WARN(module_name, "从前端消息解析出股票代码为空: {}", message);
-                return;
-            }
+        // // 前端消息接收服务器回调函数
+        // auto handleMessage = [
+        //     stockWithAccountsPtr,
+        //     orderBooksPtr,
+        //     sendServerPtr,
+        //     &OrderSubscriber,
+        //     &TradeSubscriber
+        // ] (const std::string& message) {
+        //     std::string symbol = parseAndStoreStockAccount(message, stockWithAccountsPtr);
+            
+        //     if (symbol.empty()) {
+        //         LOG_WARN(module_name, "从前端消息解析出股票代码为空: {}", message);
+        //         return;
+        //     }
 
-            (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
-                symbol, 
-                sendServerPtr,
-                stockWithAccountsPtr
-            );
+        //     (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+        //         symbol, 
+        //         sendServerPtr,
+        //         stockWithAccountsPtr
+        //     );
 
-            OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
-            TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
+        //     OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
+        //     TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
 
-        };
+        // };
 
-        // 初始化接收前端消息服务器
-        ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
+        // // 初始化接收前端消息服务器
+        // ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
 
 
        
