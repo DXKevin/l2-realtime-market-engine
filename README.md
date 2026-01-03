@@ -15,29 +15,499 @@
 
 ## 技术架构
 
-### 系统组件
+### 系统整体架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Main Application                      │
-│  - 配置管理                                               │
-│  - 多合约订单簿管理                                        │
-└────────────┬────────────────────────────────┬───────────┘
-             │                                │
-      ┌──────▼──────┐                  ┌─────▼──────┐
-      │ Order TCP   │                  │ Trade TCP  │
-      │ Subscriber  │                  │ Subscriber │
-      └──────┬──────┘                  └─────┬──────┘
-             │                                │
-             │         ┌─────────────┐        │
-             └────────►│  OrderBook  │◄───────┘
-                       │   (MPSC)    │
-                       └──────┬──────┘
-                              │
-                       ┌──────▼──────┐
-                       │  Processing │
-                       │    Thread   │
-                       └─────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                                │
+│                          ╔════════════════════════╗                           │
+│                          ║   Main Application     ║                           │
+│                          ║   - 初始化管理         ║                           │
+│                          ║   - 配置加载           ║                           │
+│                          ║   - 生命周期控制       ║                           │
+│                          ╚════════╤═══════╤══════╝                           │
+│                                   │       │                                   │
+│                    ┌──────────────┘       └──────────────┐                   │
+│                    │                                      │                   │
+│            ╔═══════▼════════╗                  ╔══════════▼═════╗            │
+│            ║ ReceiveServer  ║                  ║  SendServer    ║            │
+│            ║ (Pipe通讯)     ║                  ║ (Pipe推送)     ║            │
+│            ║ 接收前端请求   ║                  ║ 发送信号结果   ║            │
+│            ╚═════════┬══════╝                  ╚════════════════╝            │
+│                      │                                                        │
+│                      │ 新股票订阅请求                                         │
+│                      │                                                        │
+│            ┌─────────▼────────────────────────────┐                          │
+│            │  Global OrderBooks Map               │                          │
+│            │  <股票代码, OrderBook实例>            │                          │
+│            │  stock_with_accounts Map             │                          │
+│            │  <股票代码, 账户列表>                 │                          │
+│            └─────────┬────────────────────────────┘                          │
+│                      │                                                        │
+│     ┌────────────────┼────────────────┐                                      │
+│     │                │                │                                      │
+│     ▼                ▼                ▼                                      │
+│  ╔═════════╗    ╔═════════╗    ╔═════════╗                                   │
+│  ║OrderBook║    ║OrderBook║    ║OrderBook║  ... (多个合约)                   │
+│  ║ 600000  ║    ║ 000001  ║    ║ 600036  ║                                   │
+│  ╚────┬────╝    ╚────┬────╝    ╚────┬────╝                                   │
+│       │              │              │                                        │
+│       │ 汇聚事件     │ 汇聚事件     │ 汇聚事件                                 │
+│       ▼              ▼              ▼                                        │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐                               │
+│  │MPSC Queue  │ │MPSC Queue  │ │MPSC Queue  │  (无锁并发队列)                │
+│  │Blocking    │ │Blocking    │ │Blocking    │                               │
+│  └────────────┘ └────────────┘ └────────────┘                               │
+│       ▲              ▲              ▲                                        │
+│       │              │              │                                        │
+│       └──────────────┼──────────────┘                                        │
+│                      │                                                       │
+│                      │ pushEvent()                                           │
+│                      │                                                       │
+│         ┌────────────┴────────────┐                                         │
+│         │                         │                                         │
+│    ╔════▼═════╗            ╔═════▼═════╗                                    │
+│    ║ Order    ║            ║ Trade     ║                                    │
+│    ║ TCP      ║            ║ TCP       ║                                    │
+│    ║Subscriber║            ║Subscriber║                                    │
+│    ║(Thread1) ║            ║(Thread2)  ║                                    │
+│    ╚════┬═════╝            ╚═════┬═════╝                                    │
+│         │                        │                                          │
+│         │ connect()              │ connect()                                │
+│         │ login()                │ login()                                  │
+│         │ subscribe(symbol)      │ subscribe(symbol)                        │
+│         │ receiveLoop()           │ receiveLoop()                            │
+│         │                        │                                          │
+│    ╔════▼────────────────────────▼═════╗                                    │
+│    ║   L2 Market Data Server (TCP)     ║                                    │
+│    ║   逐笔委托 (Port 18103)             ║                                   │
+│    ║   逐笔成交 (Port 18105)             ║                                   │
+│    ╚═════════════════════════════════╝                                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 处理流水线架构
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                         TCP 数据包处理流水线                                  │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+TCP Socket (来自L2服务器)
+    │
+    ▼
+┌────────────────────────────────────────────────────────────┐
+│  recvData()                                                │
+│  - 从 socket 读取数据                                      │
+│  - 处理网络层逻辑 (重连、超时等)                            │
+└────────────────────┬───────────────────────────────────────┘
+                     │
+                     ▼
+┌────────────────────────────────────────────────────────────┐
+│  parseL2Data(data, type)                                   │
+│  - 按 ',' 分割数据字段                                     │
+│  - 类型判断 (Order/Trade)                                 │
+│  - 字段解析 & 数据验证                                    │
+│  - 返回 vector<MarketEvent>                               │
+└────────────────────┬───────────────────────────────────────┘
+                     │
+                     ▼ (batch)
+┌────────────────────────────────────────────────────────────┐
+│  OrderBook::pushEvent(event)                               │
+│  - 获取目标 OrderBook 实例                                │
+│  - 将事件压入 MPSC 无锁队列                               │
+│  - 返回 (异步处理)                                       │
+└────────────────────┬───────────────────────────────────────┘
+                     │
+           ┌─────────┴─────────────┐
+           │ (OrderBook 处理线程)   │
+           │ runProcessingLoop()    │
+           │                       │
+           ▼                       ▼
+    ┌─────────────────────┐  ┌──────────────────────┐
+    │ 等待队列非空        │  │ 获取事件批处理       │
+    │ (Blocking Wait)     │  │ (Batch Dequeue)      │
+    └─────────────────────┘  └──────┬───────────────┘
+                                     │
+                   ┌─────────────────┼─────────────────┐
+                   │                 │                 │
+                   ▼                 ▼                 ▼
+          ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+          │ 检查乱序     │   │ 路由分发     │   │ 缓存异常     │
+          │ (out of      │   │ Order/Trade  │   │ (pending)    │
+          │  sequence)   │   │              │   │              │
+          └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+                 │                  │                  │
+                 ▼                  ▼                  ▼
+        ┌──────────────────┐  ┌────────────────┐  ┌─────────────┐
+        │handleOrderEvent()│  │ handleTradeEvent()                │
+        │ - 撤单/添加订单  │  │ - 成交处理      │  │processPending│
+        │ - 检查涨停撤单   │  │ - 账户计算      │  │Events()     │
+        │ - 更新订单簿    │  │ - 发送信号      │  │             │
+        └─────────┬────────┘  └────────┬───────┘  └──────┬──────┘
+                  │                    │                 │
+                  └────────────────────┼─────────────────┘
+                                       │
+                                       ▼
+                        ┌──────────────────────────────┐
+                        │ SendServer::send(message)    │
+                        │ - 通过 Named Pipe 发送       │
+                        │ - 推送至前端 (Node.js)      │
+                        └──────────────────────────────┘
+                                       │
+                                       ▼
+                        ┌──────────────────────────────┐
+                        │ 前端应用 (Node.js/Web)      │
+                        │ - 展示行情数据               │
+                        │ - 用户交互                   │
+                        └──────────────────────────────┘
+```
+
+### 核心数据结构
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         OrderBook 内部数据布局                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+OrderBook Instance (symbol = "600000.SH")
+│
+├─ symbol_: "600000.SH"
+│
+├─ 买方数据结构:
+│  │
+│  ├─ bid_price_to_index_: std::map<int, int>
+│  │  │  价格档位             订单数量
+│  │  │  Key: 10.25 * 10000  Value: 5000 (手数)
+│  │  └─ 已排序，自动降序
+│  │
+│  └─ bid_orders_: std::unordered_map<string, OrderRef>
+│     │  订单ID              订单信息
+│     ├─ "order_001": {volume: 100, price: 10.25, side: 1}
+│     ├─ "order_002": {volume: 200, price: 10.24, side: 1}
+│     └─ ... (O(1) 快速查找)
+│
+├─ 卖方数据结构:
+│  │
+│  ├─ ask_price_to_index_: std::map<int, int>
+│  │  │  Key: 10.26 * 10000  Value: 3000
+│  │  └─ 已排序，自动升序
+│  │
+│  └─ ask_orders_: std::unordered_map<string, OrderRef>
+│     ├─ "order_003": {volume: 300, price: 10.26, side: 2}
+│     └─ ... (O(1) 快速查找)
+│
+├─ 特殊订单处理:
+│  │
+│  └─ null_price_order_ids_: std::unordered_set<string>
+│     │ 市价单ID集合 (价格为0的订单)
+│     ├─ "order_004"
+│     └─ "order_005"
+│
+├─ 乱序事件缓冲:
+│  │
+│  └─ pending_events_: std::deque<MarketEvent>
+│     │ 缓存乱序的事件，等待按序处理
+│     ├─ [event with index=5]
+│     ├─ [event with index=6]
+│     └─ ... (index gap)
+│
+├─ 事件队列 (生产者端):
+│  │
+│  └─ event_queue_: BlockingConcurrentQueue<MarketEvent>
+│     │ 无锁队列，TCP线程 push，处理线程 pop
+│     └─ (Thread-Safe, Lock-Free)
+│
+├─ 处理线程:
+│  │
+│  ├─ processor_thread_: std::thread
+│  │  运行 runProcessingLoop()
+│  │
+│  └─ running_: std::atomic<bool>
+│     控制线程生命周期
+│
+├─ 其他统计信息:
+│  │
+│  ├─ last_order_index_: int (最后处理的委托序号)
+│  ├─ last_trade_index_: int (最后处理的成交序号)
+│  ├─ total_bid_volume_: long (总买入量)
+│  ├─ total_ask_volume_: long (总卖出量)
+│  ├─ last_trade_price_: int (最后成交价)
+│  └─ snapshot_time_: string (最后快照时间)
+│
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 关键流程序列图
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     订阅新股票的生命周期                                 │
+└──────────────────────────────────────────────────────────────────────────┘
+
+Main Thread          ReceiveServer       OrderBook        L2 Servers
+    │                    │                   │                │
+    │ init socket        │                   │                │
+    ├───────────────────────────────────────────────────────────►
+    │                    │                   │                │
+    │  listen pipe       │                   │                │
+    │  (async)           │                   │                │
+    │◄─ Accept callback  │                   │                │
+    │                    │                   │                │
+    │  receive request   │                   │                │
+    │  "<symbol, ...>"   │                   │                │
+    │◄───────────────────┤                   │                │
+    │                    │                   │                │
+    │ parseAndStore()    │                   │                │
+    │                    │                   │                │
+    │  new OrderBook     │                   │                │
+    │  (ctor creates     │                   │                │
+    │   processing       │                   │                │
+    │   thread)          │                   │                │
+    │                    │                   │                │
+    │────────────────────────────────────────►                │
+    │                    │    pushEvent()    │                │
+    │                    │    (empty queue)  │                │
+    │                    │                   │ waiting...     │
+    │                    │                   │                │
+    │  subscribe(sym)    │                   │                │
+    ├───────────────────────────────────────────────────────────►
+    │                    │                   │ connect()      │
+    │                    │                   │ login()        │
+    │                    │                   │ subscribe()    │
+    │                    │                   │◄───────────────┤
+    │                    │                   │                │
+    │  receiveLoop()     │                   │                │
+    │  (spawned)         │                   │                │
+    │──────────────────────────────────────────────────────────►
+    │                    │                   │ recv data()    │
+    │                    │                   │◄───────────────┤
+    │                    │                   │                │
+    │                    │                   │ parse()        │
+    │                    │                   │                │
+    │                    │                   ├► pushEvent()   │
+    │                    │                   │ runLoop wakes  │
+    │                    │                   │ ↓              │
+    │                    │                   │ process event  │
+    │                    │                   │ update book    │
+    │                    │                   │ send signal    │
+    │                    │                   │◄───────────────┤
+    │                    │                   │ (continuous)   │
+    │
+    │  ... running ...
+    │
+```
+
+### 并发模型与线程协调
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      多线程并发处理模型                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│    TCP Subscriber Thread    │  │    TCP Subscriber Thread    │
+│   (Order 逐笔委托)          │  │   (Trade 逐笔成交)          │
+└────────────┬────────────────┘  └────────────┬────────────────┘
+             │                               │
+             │ Socket::recv()                │ Socket::recv()
+             │                               │
+             ▼                               ▼
+         ┌───────────┐                   ┌───────────┐
+         │Parse Data │                   │Parse Data │
+         └─────┬─────┘                   └─────┬─────┘
+               │ MarketEvent             │ MarketEvent
+               │                         │
+               └────────────┬────────────┘
+                            │
+                            │ orderbook.pushEvent(event)
+                            │ [Lock-Free, MPSC]
+                            │
+                ┌───────────▼────────────┐
+                │  BlockingConcurrentQueue   │
+                │  <1个OrderBook = 1个队列>  │
+                └───────────┬────────────┘
+                            │
+                            │ blocking_dequeue()
+                            │ (单线程消费，不需锁)
+                            │
+        ┌──────────────────▼──────────────────┐
+        │  OrderBook Processing Thread        │
+        │  runProcessingLoop()                │
+        │                                     │
+        │  ┌─────────────────────────────┐   │
+        │  │ Event Dispatch & Processing │   │
+        │  │ - handleOrderEvent()        │   │
+        │  │ - handleTradeEvent()        │   │
+        │  │ - processPendingEvents()    │   │
+        │  └─────────┬───────────────────┘   │
+        │            │                       │
+        │            ▼                       │
+        │  ┌─────────────────────────────┐   │
+        │  │  Update OrderBook State     │   │
+        │  │ - bid/ask_orders_ (local)   │   │
+        │  │ - bid/ask_price_to_index_   │   │
+        │  │ - Statistics                │   │
+        │  └─────────┬───────────────────┘   │
+        │            │                       │
+        │            ▼                       │
+        │  ┌─────────────────────────────┐   │
+        │  │ SendServer::send(signal)    │   │
+        │  │ (通过 Pipe 推送)            │   │
+        │  └─────────────────────────────┘   │
+        │                                     │
+        └─────────────────────────────────────┘
+                            │
+                            ▼
+                ┌──────────────────────┐
+                │ SendServer (Pipe)    │
+                │ (独立发送线程)       │
+                │ CRITICAL_SECTION保护 │
+                └──────────┬───────────┘
+                           │
+                           ▼
+                ┌──────────────────────┐
+                │  Named Pipe 通讯     │
+                │ (IPC - 前端)         │
+                └──────────────────────┘
+
+并发特点：
+  ✓ 无锁设计：pushEvent() 使用无锁队列
+  ✓ 单消费者：每个 OrderBook 单独处理线程
+  ✓ 线程独立：各合约订单簿之间互不干扰
+  ✓ 异步处理：发送侧无需等待接收侧
+```
+
+### 内存分布与数据局部性
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                  OrderBook 实例堆内存分布                                 │
+└──────────────────────────────────────────────────────────────────────────┘
+
+OrderBook Instance
+│
+├─ ┌──────────────────────────────────────┐
+│  │ 热路径数据 (频繁访问，CPU缓存友好)  │
+│  │                                      │
+│  ├─ symbol_: string                   │  ← 查询使用
+│  ├─ last_order_index_: int            │  ← 乱序检查 (热数据)
+│  ├─ last_trade_index_: int            │  ← 乱序检查 (热数据)
+│  │                                     │
+│  ├─ bid_price_to_index_: map<int,int> │  ← 买盘快照 (std::map保证有序)
+│  │   Key: 102500 (10.25元 * 10000)    │
+│  │   Value: 5000 (挂单量)              │
+│  │   [节点指针 - 缓存不友好]           │
+│  │                                     │
+│  ├─ ask_price_to_index_: map<int,int> │  ← 卖盘快照
+│  │   [节点指针 - 缓存不友好]           │
+│  │                                     │
+│  ├─ bid_orders_: unordered_map<...>   │  ← 买单索引 (快速查找)
+│  │   bucket_array [0]: OrderRef ──┐   │
+│  │   bucket_array [1]: OrderRef ──┼──→ heap (分散分布)
+│  │   bucket_array [2]: nullptr    │   │
+│  │   ...                          │   │
+│  │                                │   │
+│  └─ ask_orders_: unordered_map<...>   │  ← 卖单索引
+│     [类似分散分布]                   │
+│                                      │
+├─ ┌──────────────────────────────────────┐
+│  │ 冷路径数据 (不频繁访问)              │
+│  │                                      │
+│  ├─ null_price_order_ids_: set<string>│  ← 市价单集合
+│  ├─ pending_events_: deque<Event>     │  ← 乱序缓冲
+│  ├─ send_server_ptr_: shared_ptr      │  ← 服务器指针
+│  ├─ stock_with_accounts_ptr_: ...     │  ← 账户映射
+│  │                                     │
+│  ├─ total_bid_volume_: long           │  ← 统计数据
+│  ├─ total_ask_volume_: long           │
+│  ├─ last_trade_price_: int            │
+│  └─ snapshot_time_: string            │
+│                                        │
+├─ ┌──────────────────────────────────────┐
+│  │ 同步与线程管理                       │
+│  │                                      │
+│  ├─ event_queue_: BlockingConcurrent.. │  ← MPSC 队列
+│  ├─ processor_thread_: thread          │  ← 处理线程
+│  └─ running_: atomic<bool>             │  ← 原子变量
+│                                        │
+└─────────────────────────────────────────┘
+```
+
+### 订单簿状态转移图
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    单个订单的生命周期                                    │
+└──────────────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────┐
+                    │  委托下单   │
+                    │ (Type=2限价)│
+                    └──────┬──────┘
+                           │
+                           ▼
+        ┌──────────────────────────────────┐
+        │   Order Event 进入队列            │
+        │   pushEvent(MarketEvent{...})     │
+        │   - symbol, price, volume, side  │
+        │   - type, order_id, index        │
+        └──────────┬───────────────────────┘
+                   │
+                   ▼
+        ┌──────────────────────────────────┐
+        │  handleOrderEvent()               │
+        │  1. 检查乱序 (seq check)         │
+        │  2. 按类型分发                   │
+        └──────────┬───────────────────────┘
+                   │
+         ┌─────────┴─────────┬─────────┐
+         │                   │         │
+         ▼                   ▼         ▼
+    ┌────────┐          ┌────────┐  ┌────────┐
+    │ Type=1 │          │ Type=2 │  │Type=10 │
+    │ 市价单 │          │ 限价单 │  │ 撤单   │
+    └────┬───┘          └───┬────┘  └───┬────┘
+         │                  │            │
+         │ 价格=0           │ 价格≥1000  │ 查询订单簿
+         │ 存入集合          │ 创建档位   │ 检查涨停
+         │                  │ addOrder()│ 检查是否存在
+         │                  │ +1 count  │
+         │                  │           │ ┌─►匹配成交
+         │                  │           │ │ (pushEvent
+         │                  │           │ │  TradeEvent)
+         │                  ▼           ▼ ▼
+         │            ┌──────────────────────────┐
+         └───────────►│      订单簿状态          │
+                      │ bid/ask_price_to_index   │
+                      │ bid/ask_orders           │
+                      │ null_price_order_ids     │
+                      └─────────┬────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+                    ▼                       ▼
+              ┌──────────┐           ┌─────────────┐
+              │ 全部成交 │           │ 部分成交    │
+              │ (remove) │           │ 还在挂单    │
+              └────┬─────┘           └──────┬──────┘
+                   │                        │
+                   │ removeOrder()           │ 价格->数量
+                   │ 或 Trade 处理          │ 更新档位信息
+                   │                        │
+                   ▼                        ▼
+              ┌──────────────────────────────────┐
+              │   发送信号至前端                 │
+              │   SendServer::send(signal)       │
+              │   {signal_type, symbol, ...}     │
+              └──────────┬───────────────────────┘
+                         │
+                         ▼
+                ┌──────────────────────┐
+                │  前端应用处理        │
+                │  (Node.js/Web UI)    │
+                └──────────────────────┘
 ```
 
 ### 核心类说明
@@ -46,22 +516,238 @@
 - **职责**：管理与 L2 行情服务器的 TCP 连接
 - **功能**：登录认证、合约订阅、数据接收和解析
 - **线程模型**：独立接收线程，自动重连机制
+- **数据流**：TCP 套接字 → recvData() → parseL2Data() → pushEvent()
 
 #### OrderBook
-- **职责**：维护单个合约的完整订单簿
-- **数据结构**：
-  - 买卖价格档位映射（std::map）
-  - 订单快速索引（std::unordered_map）
-  - 乱序事件缓冲队列
+- **职责**：维护单个合约的完整订单簿，驱动事件处理
+- **核心数据结构**：
+  - `bid/ask_price_to_index_`：价格档位映射（std::map，自动排序）
+  - `bid/ask_orders_`：订单快速索引（std::unordered_map，O(1) 查找）
+  - `null_price_order_ids_`：市价单集合（std::unordered_set）
+  - `pending_events_`：乱序事件缓冲（std::deque）
+  - `event_queue_`：无锁并发队列（MPSC）
 - **并发模型**：MPSC 无锁队列 + 单独处理线程
+- **关键方法**：
+  - `pushEvent()`：线程安全的事件入队（来自 TCP 线程）
+  - `runProcessingLoop()`：主处理循环（单线程消费）
+  - `handleOrderEvent()`/`handleTradeEvent()`：事件路由与处理
+  - `processPendingEvents()`：乱序事件排序与处理
 
 #### L2Parser
-- **职责**：解析 L2 协议数据包
-- **特点**：零拷贝解析，使用 string_view 减少内存分配
+- **职责**：解析 L2 协议数据包为结构化对象
+- **特点**：零拷贝解析，使用 `string_view` 减少内存分配
+- **算法**：
+  - 按 ',' 分割数据字段
+  - 使用 `std::from_chars` 进行快速整数转换
+  - 字段验证与类型转换
+- **输出**：`vector<MarketEvent>` 
 
-#### Logger
+#### ReceiveServer
+- **职责**：监听 Windows Named Pipe，接收前端消息
+- **通讯方式**：Named Pipe（IPC）
+- **消息格式**：`<symbol,user_id,account_id>`
+- **回调机制**：异步消息处理回调
+
+#### SendServer
+- **职责**：通过 Named Pipe 向前端推送交易信号
+- **线程模型**：独立发送线程
+- **并发控制**：`CRITICAL_SECTION` 互斥锁保护 client handle
+- **消息格式**：JSON 格式的交易信号
+
+#### Logger (spdlog)
 - **职责**：基于 spdlog 的异步日志系统
-- **特性**：支持文件和控制台双输出，自动按日期轮转
+- **特性**：
+  - 支持文件和控制台双输出
+  - 自动按日期轮转（daily_logger）
+  - 异步写入，不阻塞主线程
+  - 支持 TRACE/DEBUG/INFO/WARN/ERROR 等级
+
+### IPC 通讯架构
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    C++ 后端 ←→ Node.js 前端                             │
+│                    通过 Windows Named Pipe                              │
+└──────────────────────────────────────────────────────────────────────────┘
+
+C++ 后端 (市场数据处理)
+│
+├─ ReceiveServer
+│  │
+│  ├─ Pipe 名称: "\\.\pipe\from_nodejs_pipe"
+│  │  读取方向: ◄──── 前端请求
+│  │
+│  └─ 消息格式: "<symbol,user_id,account_id>"
+│     示例: "<600000.SH,user_001,account_101>"
+│
+│     ┌─────────────────────────────────────────┐
+│     │  handleMessage(message)                 │
+│     │  1. 解析 symbol, user_id, account_id   │
+│     │  2. 创建 OrderBook(symbol)              │
+│     │  3. 订阅 OrderSubscriber & TradeSubscriber
+│     │  4. 存储到全局 orderBooksPtr           │
+│     └──────────┬──────────────────────────────┘
+│                │
+│                ▼
+│            OrderBook::start()
+│              ↓
+│            处理行情数据
+│
+│
+├─ SendServer
+│  │
+│  ├─ Pipe 名称: "\\.\pipe\to_python_pipe"
+│  │  写入方向: ───► 发送信号
+│  │
+│  └─ 消息格式: JSON
+│     示例: {
+│         "type": "trade_signal",
+│         "symbol": "600000.SH",
+│         "accounts": ["account_101"],
+│         "signal": "EXECUTE",
+│         "timestamp": 1234567890
+│     }
+│
+│     触发场景:
+│     - handleTradeEvent() ───► 成交处理
+│     - handleOrderEvent() ───► 订单更新
+│     - checkLimitUpWithdrawal() ─► 异常监控
+│
+│
+└─ 其他模块
+   │
+   ├─ ConfigReader ("config.ini")
+   │  读取: server(host, port), auth(username, password)
+   │
+   └─ Logger ("logs/app.log")
+      记录: 所有模块的运行日志
+
+
+Pipe 连接状态机:
+
+  ReceiveServer               SendServer
+       │                           │
+       │ new                       │ new
+       ▼                           ▼
+   ┌─────────┐               ┌─────────┐
+   │ Waiting │               │ Waiting │
+   │ Accept  │               │ Connect │
+   └────┬────┘               └────┬────┘
+        │ frontend                 │ orderbook
+        │ connects                 │ connects
+        │                          │
+        ▼                          ▼
+   ┌─────────┐               ┌─────────┐
+   │Connected│               │Connected│
+   │  Pipe   │               │  Pipe   │
+   └────┬────┘               └────┬────┘
+        │ msg received            │ msg to send
+        │                         │
+        ▼                         ▼
+   ┌─────────┐               ┌─────────┐
+   │ Dispatch│               │  Push   │
+   │ Handler │               │ to Pipe │
+   └─────────┘               └─────────┘
+
+Timeline Example (订阅 600000.SH):
+
+Time  │ Frontend (Node.js)    │ C++ Backend              │ Market Server
+──────┼──────────────────────┼──────────────────────────┼─────────────
+  0   │ send request:        │                          │
+      │ <600000.SH, ...>     │                          │
+      │                      │                          │
+  1   │                      │ ReceiveServer accept msg │
+      │                      │ parseAndStoreStockAccount│
+      │                      │ new OrderBook(600000)    │
+      │                      │                          │
+  2   │                      │ OrderSubscriber.subscribe│
+      │                      ├─────────────────────────►│
+      │                      │ TradeSubscriber.subscribe├─►
+      │                      │                          │
+  3   │                      │ ◄─ Order Data            │
+      │                      │ ◄─ Trade Data           │
+      │                      │                          │
+  4   │                      │ parseL2Data() + pushEvent()
+      │                      │ OrderBook::runProcessLoop()
+      │                      │ handleOrderEvent()       │
+      │                      │ handleTradeEvent()       │
+      │                      │                          │
+  5   │                      │ SendServer.send(signal)  │
+      │ ◄────────────────────┤◄──────────────────────── │
+      │ Received Signal JSON │                          │
+      │                      │                          │
+  ... │ ... continuous updates ...                     │
+```
+
+### 模块间接口规范
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      关键模块接口约定                                    │
+└──────────────────────────────────────────────────────────────────────────┘
+
+1. L2TcpSubscriber ◄──► OrderBook
+   ┌──────────────────────────────────────┐
+   │ void OrderBook::pushEvent(            │
+   │   const MarketEvent& event            │
+   │ )                                     │
+   │                                       │
+   │ 参数:                                 │
+   │   event.type: "order" / "trade"      │
+   │   event.symbol: "600000.SH"          │
+   │   event.data: L2Order / L2Trade      │
+   │                                       │
+   │ 特点: Lock-Free, 线程安全            │
+   │ 调用者: TCP 接收线程                 │
+   └──────────────────────────────────────┘
+
+2. OrderBook ◄──► SendServer
+   ┌──────────────────────────────────────┐
+   │ bool SendServer::send(                │
+   │   const std::string& message          │
+   │ )                                     │
+   │                                       │
+   │ 参数:                                 │
+   │   message: JSON 格式信号              │
+   │   格式: {symbol, accounts, signal}   │
+   │                                       │
+   │ 返回: true 发送成功                  │
+   │ 特点: 线程安全 (CRITICAL_SECTION)   │
+   │ 调用者: OrderBook 处理线程           │
+   └──────────────────────────────────────┘
+
+3. ReceiveServer ◄──► Main
+   ┌──────────────────────────────────────┐
+   │ void handleMessage(                   │
+   │   const std::string& message          │
+   │ )                                     │
+   │                                       │
+   │ 参数:                                 │
+   │   message: "<symbol,user_id,account> │
+   │                                       │
+   │ 回调触发: 前端消息到达时              │
+   │ 执行线程: ReceiveServer 内部线程    │
+   │ 期望操作:                             │
+   │   1. parseAndStoreStockAccount()     │
+   │   2. create OrderBook                │
+   │   3. subscribe(symbol)               │
+   └──────────────────────────────────────┘
+
+4. L2Parser ◄──► L2TcpSubscriber
+   ┌──────────────────────────────────────┐
+   │ vector<MarketEvent> parseL2Data(     │
+   │   std::string_view data,             │
+   │   std::string_view type              │
+   │ )                                     │
+   │                                       │
+   │ 参数:                                 │
+   │   data: "1,600000.SH,14:30:00,..."   │
+   │   type: "order" / "trade"            │
+   │                                       │
+   │ 返回: vector<MarketEvent>            │
+   │ 特点: 零拷贝 (string_view)           │
+   └──────────────────────────────────────┘
+```
 
 ## 环境要求
 
@@ -75,6 +761,141 @@
 - **spdlog**：异步日志库（已包含在 third_party）
 - **concurrentqueue**：无锁并发队列（已包含在 third_party）
 - **winsock2**：Windows 网络库（Windows 系统自带）
+
+### 程序启动流程
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        main() 启动顺序                                   │
+└──────────────────────────────────────────────────────────────────────────┘
+
+                            Start: main()
+                                  │
+                                  ▼
+                    ┌──────────────────────┐
+                    │ SetConsoleOutputCP   │
+                    │ (UTF-8 编码支持)     │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ init_log_system()    │
+                    │ - 创建日志文件      │
+                    │ - 初始化 spdlog     │
+                    │ - 启用异步写入      │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ ConfigReader config  │
+                    │ - 读取 config.ini   │
+                    │ - 解析 server 配置  │
+                    │ - 解析 auth 配置    │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────────────┐
+                    │ 初始化全局数据结构           │
+                    │                              │
+                    │ orderBooksPtr                │
+                    │ <string, OrderBook*>         │
+                    │                              │
+                    │ stockWithAccountsPtr         │
+                    │ <string, vector<string>>     │
+                    └──────────┬───────────────────┘
+                               │
+                ┌──────────────┼──────────────┐
+                │              │              │
+                ▼              ▼              ▼
+    ┌─────────────────┐  ┌──────────────┐  ┌────────────────┐
+    │ OrderSubscriber │  │TradeSubscriber│  │  SendServer    │
+    │ new() + connect()    new() + connect() new(pipe_name)
+    │ + login()       │  │ + login()    │  │                │
+    └────────┬────────┘  └──────┬───────┘  └────────┬───────┘
+             │                  │                   │
+             └──────────────────┼───────────────────┘
+                                │
+                                ▼
+                    ┌──────────────────────┐
+                    │ ReceiveServer        │
+                    │ new(pipe_name,       │
+                    │     handleMessage)   │
+                    │                      │
+                    │ Spawn 服务线程       │
+                    │ Listening 等待请求   │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ 进入等待循环         │
+                    │ - 等待前端消息       │
+                    │ - 订阅新股票         │
+                    │ - 接收行情数据       │
+                    │ - 处理订单簿         │
+                    │ - 推送交易信号       │
+                    │                      │
+                    │ (std::cin.get())     │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ 按 Ctrl+C 退出       │
+                    │ - 关闭 TCP 连接      │
+                    │ - 停止所有线程       │
+                    │ - 释放资源           │
+                    │ - 关闭日志系统       │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                            Exit: 0
+```
+
+### 多股票并发处理时间轴
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│              订阅多个股票时的并发执行时间轴                              │
+└──────────────────────────────────────────────────────────────────────────┘
+
+Main Thread         OrderBook#1          OrderBook#2          Market Server
+(Front. Request)    (Thread)             (Thread)             (TCP)
+    │                   │                    │                   │
+    │ request: 600000   │                    │                   │
+    ├──────────────────────────────────────────────────────────────►
+    │ create OB#1       │                    │                   │
+    │ subscribe()       │                    │                   │
+    │                   │                    │ ◄─ Orders flow from server
+    │                   │ (waiting events)   │
+    │                   │                    │
+    │ request: 000001   │                    │
+    ├───────────┬──────────────────────────────────────────────────►
+    │           │ create OB#2                                 │
+    │           │ subscribe()                                 │
+    │           │                   │ (waiting events)        │
+    │           │                   │                         │
+    │           ▼                   ▼                         │
+    │     process #1            process #2              ◄─ Trade flow
+    │     msg batch-A           msg batch-B
+    │     updateBook()           updateBook()
+    │     send signal#1          send signal#2
+    │                   │
+    │           ◄────────┼────────────────►
+    │     (pipe communications)
+    │           │
+    │ (async)   │   (async)
+    │ ◄─────────────────────────►
+    │ recv sig#1 & sig#2
+    │
+    │ ... 持续并发处理，无阻塞 ...
+    │
+
+
+关键特点:
+  ✓ 各 OrderBook 独立处理线程
+  ✓ 无互相等待 (Lock-Free)
+  ✓ 主线程无阻塞
+  ✓ 吞吐量线性增加 (per symbol)
+```
 
 ## 快速开始
 
@@ -126,6 +947,200 @@ make
 cd bin
 ./main   # Linux/macOS
 main.exe # Windows
+```
+
+### 项目文件说明
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     项目文件详细说明                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+【核心编译文件】
+├── CMakeLists.txt
+│   ├─ 目标: common (静态库) + main (可执行程序)
+│   ├─ 包含目录: include/, third_party/include/
+│   ├─ 链接库: ws2_32 (Windows 网络库)
+│   └─ C++ 版本: C++17
+│
+├── main.cpp (123行)
+│   ├─ main() 程序入口
+│   ├─ 初始化流程: 日志 → 配置 → 全局数据结构
+│   ├─ 创建: OrderSubscriber, TradeSubscriber, SendServer
+│   ├─ 启动: ReceiveServer (监听 Named Pipe)
+│   └─ 等待: 前端请求到达
+
+【头文件 (include/)】
+├── ConfigReader.h
+│   └─ 配置文件解析类，读取 config.ini
+│
+├── DataStruct.h (143行)
+│   ├─ struct L2Order: 逐笔委托数据结构
+│   │   ├─ index: 推送序号
+│   │   ├─ symbol: 合约代码
+│   │   ├─ time: 时间
+│   │   ├─ price: 价格 (单位0.0001元)
+│   │   ├─ volume: 股数
+│   │   ├─ type: 委托类型 (10=撤单, 2=限价)
+│   │   ├─ side: 买卖方向 (1=买, 2=卖)
+│   │   └─ id: 统一订单ID
+│   │
+│   ├─ struct L2Trade: 逐笔成交数据结构
+│   │   ├─ symbol, time, price, volume
+│   │   └─ trade_id, buy_id, sell_id
+│   │
+│   ├─ struct MarketEvent: 事件包装
+│   │   ├─ type: "order" / "trade"
+│   │   ├─ symbol: 股票代码
+│   │   └─ data: variant<L2Order, L2Trade>
+│   │
+│   └─ inline svToInt(): string_view 到 int 转换
+│
+├── L2Parser.h (172行)
+│   ├─ splitByComma(): 按',' 分割 string_view
+│   ├─ parseL2Data(): 解析 L2 数据包
+│   │   └─ 输入: "1,600000.SH,14:30:00,..." (CSV格式)
+│   │   └─ 输出: vector<MarketEvent>
+│   ├─ 特点: 零拷贝 (string_view), 快速整数转换
+│   └─ 支持: 11字段(Order) / 12字段(Trade)
+│
+├── L2TcpSubscriber.h (59行)
+│   ├─ 职责: 管理 L2 服务器 TCP 连接
+│   ├─ 公共方法:
+│   │   ├─ connect(): 建立 TCP 连接
+│   │   ├─ login(): 发送登录消息
+│   │   ├─ subscribe(symbol): 订阅指定股票
+│   │   ├─ sendData(message): 发送消息
+│   │   ├─ recvData(): 接收数据
+│   │   └─ stop(): 停止连接
+│   ├─ 私有方法:
+│   │   └─ receiveLoop(): 后台接收线程
+│   └─ 成员变量: host, port, username, password, orderbooks_ptr
+│
+├── Logger.h
+│   ├─ init_log_system(logfile): 初始化 spdlog
+│   ├─ LOG_INFO/WARN/ERROR: 日志宏
+│   └─ 特性: 异步日志, 日期轮转, 文件+控制台输出
+│
+└── OrderBook.h (82行)
+    ├─ 职责: 维护单个股票的订单簿
+    ├─ 构造函数 ctor:
+    │   ├─ 创建处理线程
+    │   ├─ 初始化数据结构
+    │   └─ 启动 runProcessingLoop()
+    ├─ 公共接口:
+    │   ├─ pushEvent(event): 入队事件 (Lock-Free)
+    │   ├─ stop(): 停止处理
+    │   └─ printOrderBook(levels): 打印订单簿快照
+    ├─ 私有方法:
+    │   ├─ runProcessingLoop(): 主处理循环
+    │   ├─ handleOrderEvent(): 委托事件处理
+    │   ├─ handleTradeEvent(): 成交事件处理
+    │   ├─ processPendingEvents(): 乱序处理
+    │   ├─ addOrder(): 添加订单到簿中
+    │   ├─ removeOrder(): 删除订单
+    │   ├─ checkLimitUpWithdrawal(): 涨停撤单检查
+    │   └─ onTrade(): 成交处理
+    ├─ 关键数据结构:
+    │   ├─ bid_price_to_index_: map<int,int> (买档)
+    │   ├─ ask_price_to_index_: map<int,int> (卖档)
+    │   ├─ bid_orders_: unordered_map<string, OrderRef> (买单)
+    │   ├─ ask_orders_: unordered_map<string, OrderRef> (卖单)
+    │   ├─ null_price_order_ids_: unordered_set<string> (市价单)
+    │   ├─ pending_events_: deque<MarketEvent> (乱序缓冲)
+    │   ├─ event_queue_: BlockingConcurrentQueue (MPSC队列)
+    │   └─ processor_thread_: thread (处理线程)
+    └─ 嵌套类:
+        └─ struct OrderRef: {volume, price, side, id}
+
+【源文件 (src/)】
+├── L2TcpSubscriber.cpp
+│   ├─ connect() 实现: socket 创建, bind, connect
+│   ├─ login() 实现: 发送认证消息
+│   ├─ subscribe() 实现: 发送订阅消息
+│   ├─ receiveLoop() 实现: 持续接收数据
+│   │   └─ 循环: recv() → parseL2Data() → pushEvent()
+│   └─ 重连机制
+│
+├── Logger.cpp
+│   ├─ init_log_system(): spdlog 初始化
+│   ├─ 创建 daily_file_sink (自动轮转)
+│   ├─ 创建 stdout_color_sink (控制台输出)
+│   ├─ 异步线程池: 后台写入
+│   └─ 日志格式: [timestamp] [module] [level] message
+│
+└── OrderBook.cpp
+    ├─ OrderBook() 构造:
+    │   └─ 创建处理线程运行 runProcessingLoop()
+    ├─ runProcessingLoop() 实现:
+    │   ├─ 无限循环等待队列非空
+    │   ├─ event_queue_.wait_dequeue() (阻塞等待)
+    │   ├─ 批量处理事件
+    │   ├─ 调用 handleOrderEvent() 或 handleTradeEvent()
+    │   └─ 定时检查 pending_events_
+    ├─ handleOrderEvent() 实现:
+    │   ├─ 检查乱序 (index 检查)
+    │   ├─ if type=10: removeOrder() 撤单
+    │   ├─ else: addOrder() 添加新订单
+    │   └─ checkLimitUpWithdrawal() 异常监控
+    ├─ handleTradeEvent() 实现:
+    │   ├─ 更新订单簿 (成交量调整)
+    │   ├─ 触发 onTrade() 成交处理
+    │   ├─ 计算账户收益
+    │   └─ sendServer_->send(signal) 推送信号
+    ├─ processPendingEvents() 实现:
+    │   ├─ 排序 pending_events_
+    │   ├─ 批量处理乱序事件
+    │   └─ 检查是否可继续处理
+    ├─ addOrder() 实现:
+    │   ├─ 新建 OrderRef
+    │   ├─ 加入 bid/ask_orders_
+    │   ├─ 更新 bid/ask_price_to_index_ 数量
+    │   └─ 更新统计数据
+    └─ removeOrder() 实现:
+        ├─ 查找订单
+        ├─ 从 bid/ask_orders_ 删除
+        ├─ 更新 bid/ask_price_to_index_
+        └─ 触发清空逻辑
+
+【第三方库 (third_party/)】
+├── concurrentqueue/
+│   ├─ blockingconcurrentqueue.h (MPSC 无锁队列)
+│   │   ├─ 支持: wait_dequeue(), enqueue()
+│   │   ├─ 特点: Lock-Free, 高吞吐量
+│   │   └─ 用途: OrderBook 事件队列
+│   └─ ...
+│
+└── spdlog/
+    ├─ logger.h / logger-inl.h (日志对象)
+    ├─ pattern_formatter.h (日志格式化)
+    ├─ sinks/daily_file_sink.h (日期轮转)
+    ├─ sinks/stdout_color_sink.h (彩色输出)
+    └─ async.h (异步后台线程)
+
+【配置文件 (bin/)】
+├── config.ini
+│   ├─ [server] 部分:
+│   │   ├─ host = www.l2api.cn (L2 服务器地址)
+│   │   ├─ order_port = 18103 (委托数据端口)
+│   │   └─ trade_port = 18105 (成交数据端口)
+│   └─ [auth] 部分:
+│       ├─ username = xxx (API 账号)
+│       └─ password = xxx (API 密码)
+│
+├── logs/ (日志目录)
+│   └─ app.YYYY-MM-DD.log (按日期自动轮转)
+│       ├─ 内容: 所有模块的运行日志
+│       ├─ 级别: TRACE/DEBUG/INFO/WARN/ERROR
+│       └─ 保留: 默认10天
+
+【其他】
+└── build/ (CMake 构建目录)
+    ├─ CMakeCache.txt
+    ├─ Makefile (或 .sln 在 Windows)
+    ├─ CMakeFiles/ (中间文件)
+    ├─ compile_commands.json (编译命令)
+    └─ 生成的对象文件和可执行程序
 ```
 
 ## 项目结构
@@ -251,6 +1266,144 @@ processPendingEvents();
 支持实时打印指定档位深度：
 ```cpp
 orderbook->printOrderBook(10); // 打印买卖各 10 档
+```
+
+### 5. 算法复杂度分析
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    关键操作时间复杂度分析                                 │
+└──────────────────────────────────────────────────────────────────────────┘
+
+【数据查找与修改】
+
+1. 订单查询 (查找 order_id)
+   ┌─────────────────────────┐
+   │ bid/ask_orders_ lookup  │
+   │ unordered_map::find()   │
+   │                         │
+   │ Time Complexity: O(1)   │ ← 平均情况
+   │ Space: O(n) with m      │   其中 m = bucket 数量
+   │ Collision Chain: O(1~k) │ ← 最坏情况(k为链长)
+   └─────────────────────────┘
+
+2. 价格档位查询
+   ┌────────────────────────────┐
+   │ bid/ask_price_to_index_    │
+   │ lookup (std::map::lower_   │
+   │ bound / upper_bound)       │
+   │                            │
+   │ Time Complexity: O(log L)  │ ← L = 价格档数
+   │ Space: O(L)                │
+   │ 自动排序: 买档降序/卖档升序│
+   └────────────────────────────┘
+
+3. 市价单查询
+   ┌──────────────────────────────┐
+   │ null_price_order_ids_.find() │
+   │ unordered_set                │
+   │                              │
+   │ Time Complexity: O(1)        │
+   │ Space: O(m) with m = 市价单数│
+   └──────────────────────────────┘
+
+【操作时序】
+
+事件处理 (per event):
+  ┌─ 顺序事件处理流程 ────────────────────────────┐
+  │                                                │
+  │ 1. 乱序检查           O(1)                    │
+  │    └─ 对比 last_index                        │
+  │                                                │
+  │ 2. 如果乱序           O(k*log m)             │
+  │    └─ pending_events_.push_back()   O(1)     │
+  │    └─ processPendingEvents()        O(k log k) │
+  │       (k = 待处理乱序数量, m = 价格档数)     │
+  │                                                │
+  │ 3. 添加/删除订单      O(log L + 1)          │
+  │    ├─ bid/ask_orders_[id] = ...  O(1)       │
+  │    ├─ bid/ask_price_to_index_[]  O(log L)  │
+  │    └─ 更新档位数量                           │
+  │                                                │
+  │ 总计 (常规路径):    O(log L) + O(1) = O(log L)
+  │ 总计 (乱序路径):    O(k log k)   (k = 乱序数)
+  │                                                │
+  └────────────────────────────────────────────────┘
+
+【订单簿快照操作】
+
+遍历打印订单簿:
+  ┌──────────────────────────────────────┐
+  │ printOrderBook(level_num)             │
+  │                                       │
+  │ 1. 遍历买档                           │
+  │    for (auto it = bid_...rbegin())   │
+  │    loop count: O(level_num)           │
+  │    per iteration: O(1)                │
+  │                                       │
+  │ 2. 遍历卖档                           │
+  │    for (auto it = ask_...begin())    │
+  │    loop count: O(level_num)           │
+  │    per iteration: O(1)                │
+  │                                       │
+  │ 总计: O(level_num)  (通常 level_num ≤ 50)
+  │                                       │
+  └──────────────────────────────────────┘
+
+【批量处理性能】
+
+批量事件处理 (per batch):
+  
+  Queue Size: N (从队列取出的事件数)
+  
+  ┌──────────────────────────────────┐
+  │ event_queue_.wait_dequeue_bulk() │
+  │ 取出 N 个事件                    │
+  │ Time: O(1)    (无锁操作)        │
+  │                                  │
+  │ for i in 0..N-1:                │
+  │   handleEvent(events[i])        │
+  │   avg time: O(log L)            │
+  │                                  │
+  │ 总计: O(N * log L)              │
+  │                                  │
+  │ 吞吐量: N 个事件 / (O(N log L)) │
+  │       ≈ 1/log(L) 事件/纳秒      │
+  │       ≈ 100k-200k events/ms (L≈10)
+  │                                  │
+  └──────────────────────────────────┘
+
+【空间复杂度总结】
+
+单个 OrderBook 实例内存占用:
+
+  基础成员:             ~200 字节
+  
+  bid_price_to_index_:  O(L)     = L * 16 字节 (每个 pair)
+                                 ≈ 160 字节 (L=10档)
+  
+  ask_price_to_index_:  O(L)     ≈ 160 字节
+  
+  bid_orders_:          O(n)     = n * (24 + overhead)
+                                 ≈ n * 60 字节 (n = 挂单数)
+  
+  ask_orders_:          O(n)     ≈ n * 60 字节
+  
+  null_price_order_ids_:O(m)     = m * (24 + 16 + str)
+                                 ≈ m * 64 字节 (m = 市价单数)
+  
+  pending_events_:      O(k)     = k * (sizeof(MarketEvent))
+                                 ≈ k * 200 字节 (k = 乱序数)
+  
+  event_queue_:         O(1)     ≈ 8KB (固定队列头)
+  
+  总计 (估算):          
+    ≈ 200 + 320 + 60*n + 64*m + 200*k + 8000 字节
+    ≈ 8.5 KB + 60*n + 64*m + 200*k 字节
+  
+  典型情况 (n=1000, m=50, k=10):
+    ≈ 60 + 3.2 + 2 + 8.5 ≈ 74 KB per symbol
+
 ```
 
 输出格式：
