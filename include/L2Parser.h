@@ -76,13 +76,13 @@ inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_v
                     if (fields.size() == ORDER_FIELDS) {
                         event_list.emplace_back(L2Order(fields));
                     } else {
-                        LOG_WARN("L2Parser", "order字段数不匹配");
+                        LOG_WARN("L2Parser", "order字段数不匹配, data:{}", data);
                     }
                 } else if (type == "trade"){
                     if (fields.size() == TRADE_FIELDS) {
                         event_list.emplace_back(L2Trade(fields));
                     } else {
-                        LOG_WARN("L2Parser", "trade字段数不匹配");
+                        LOG_WARN("L2Parser", "trade字段数不匹配, data:{}", data);
                     }
                 }
             }
