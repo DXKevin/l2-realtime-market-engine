@@ -34,6 +34,7 @@ private:
     bool isOrderExists(const std::string& order_id) const;
     void addOrder(const L2Order& order);
     void onTrade(const L2Trade& trade);
+    void onCancelOrder(const std::string& order_id);
     void removeOrder(const std::string& order_id);
     void printOrderBook(int level_num) const;
 
@@ -62,9 +63,6 @@ private:
 
     // 暂存待处理事件
     std::deque<MarketEvent> pending_events_; 
-
-    // 暂存市价单ID
-    std::unordered_set<std::string> null_price_order_ids_;
 
     // 快速查找订单
     std::unordered_map<std::string, std::list<OrderRef>::iterator> order_index_;

@@ -59,7 +59,7 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "002202.SZ";
+        std::string symbol = "001208.SZ";
 
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 
