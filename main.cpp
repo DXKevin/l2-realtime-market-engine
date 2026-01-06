@@ -37,7 +37,7 @@ int main() {
         auto orderBooksPtr = std::make_shared<std::unordered_map<std::string, std::unique_ptr<OrderBook>>>();
         auto stockWithAccountsPtr = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
 
-         // 初始化行情服务器连接
+        // 初始化行情服务器连接
         L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
         L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
 
@@ -59,7 +59,7 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "001208.SZ";
+        std::string symbol = "000592.SZ";
 
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 

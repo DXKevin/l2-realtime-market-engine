@@ -1,5 +1,8 @@
 #include "OrderBook.h"
 #include "Logger.h"
+#include "L2Parser.h"
+
+
 #include <iostream>
 
 
@@ -56,7 +59,7 @@ void OrderBook::runProcessingLoop() {
     int print_book_count = 0;
 
     const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
-    const int PRINT_INTERVAL_EVENTS = 10; // 每处理 10 笔事件打印一次
+    const int PRINT_INTERVAL_EVENTS = 100; // 每处理 100 笔事件打印一次
 
     while (running_) {
         MarketEvent evt;
@@ -70,7 +73,7 @@ void OrderBook::runProcessingLoop() {
             // 定期处理待处理事件
             ++process_pending_events_count;
             if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
-                LOG_INFO(module_name, "等待处理的事件数量: {}", pending_events_.size());
+                // LOG_INFO(module_name, "等待处理的事件数量: {}", pending_events_.size());
                 processPendingEvents();
                 process_pending_events_count = 0;
             }
@@ -85,9 +88,10 @@ void OrderBook::runProcessingLoop() {
         // 定期打印订单簿
         ++print_book_count;
         if (print_book_count == PRINT_INTERVAL_EVENTS) {
-            printOrderBook(5);
+            printOrderBook(10);
             print_book_count = 0;
         }
+
     }
 }
 
@@ -113,7 +117,6 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
             } else {
                 // 未找到订单，加入等待队列
                 if (order.timestamp + EVENT_TIMEOUT_MS < last_event_timestamp_) {
-                    LOG_WARN(module_name, "[{}] 长时间未找到订单ID: {} 的撤单请求，可能数据有问题，丢弃该撤单请求", symbol_, order.id);
                     return;
                 }
 
@@ -157,6 +160,10 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
         // 处理撤单可能存在的乱序情况
 
         auto handle_cancel = [this, &event, &trade](const std::string& order_id) {
+            if (order_id == "0") {
+                return;
+            }
+            
             if (isOrderExists(order_id)) {
                 onCancelOrder(order_id);
                 return;
@@ -193,8 +200,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
         } else {
             // 双方订单都不存在于订单簿中, 可能是乱序, 加入等待队列
             if (trade.timestamp + EVENT_TIMEOUT_MS < last_event_timestamp_) {
-                LOG_WARN(module_name, "[{}] 长时间未找到双方订单ID: 买方订单ID: {}, 卖方订单ID: {} 的成交请求，可能数据有问题，丢弃该成交请求", 
-                    symbol_, trade.buy_id, trade.sell_id);
+                // 长时间未找到订单，丢弃该成交请求
                 return;
             } else {
                 pending_events_.push_back(event);
@@ -375,7 +381,7 @@ void OrderBook::printOrderBook(int level_num) const {
     for (auto it = ask_volume_at_price_.begin(); 
          it != ask_volume_at_price_.end() && ask_count < level_num; 
          ++it, ++ask_count) {
-            
+
             ask_levels.emplace_back(it->first, it->second);
     }
 
@@ -413,6 +419,24 @@ void OrderBook::checkLimitUpWithdrawal() {
     int current_volume  = best_bid_it->second;
     int current_price  = best_bid_it->first;
 
+    // 计算买一价位及以下的总卖单量
+    int total_ask_volume_at_or_below_best_bid = 0;
+    for (auto it = ask_volume_at_price_.begin(); it != ask_volume_at_price_.end(); ++it) {
+        if (it->first <= current_price) {
+            total_ask_volume_at_or_below_best_bid += it->second;
+        } else {
+            break;
+        }
+    }
+
+    // 判断涨停状态
+    if (total_ask_volume_at_or_below_best_bid > 0) {
+        if (1000 * total_ask_volume_at_or_below_best_bid > current_volume) {
+        // 代表买一价位及以下有大量卖单, 说明并非涨停状态, 不做处理
+        return;
+        }
+    }
+
     // 更新最大买一量
     if (current_volume > max_bid_volume_){
         max_bid_volume_ = current_volume;
@@ -426,7 +450,10 @@ void OrderBook::checkLimitUpWithdrawal() {
         
         // 放发生交易请求的部分
         if (send_server_) {
-            send_server_->send("Limit up withdrawal detected for " + symbol_);
+            send_server_->send(formatStockAccount(
+                symbol_, 
+                stock_with_accounts_
+            ));
         }
 
         LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前买一量 {} 低于历史最高买一量 {} 的 2/3", 
