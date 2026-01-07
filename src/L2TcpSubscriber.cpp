@@ -210,7 +210,7 @@ void L2TcpSubscriber::receiveLoop() {
 
         //LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
 
-        auto events = parseL2Data(data, type_);
+        auto events = parseL2Data(data, type_, buffer_);
         
         for (const auto& event : events) {
             const std::string& symbol = getSymbol(event);

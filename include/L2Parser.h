@@ -45,66 +45,70 @@ struct L2FieldCount<L2Trade> {
 };
 
 
-inline std::vector<MarketEvent> parseL2Data(std::string_view data, std::string_view type) {
+inline std::vector<MarketEvent> parseL2Data(
+    std::string_view data, std::string_view type, std::string& buffer_) {
     constexpr size_t ORDER_FIELDS  = L2FieldCount<L2Order>::field_num;
     constexpr size_t TRADE_FIELDS  = L2FieldCount<L2Trade>::field_num;
 
     std::vector<MarketEvent> event_list;
     size_t pos = 0;
+    
+    buffer_.append(data.data(), data.size());
+    std::string_view buffer_view = buffer_;
 
-    while (pos < data.size()) {
+    while (pos < buffer_.size()) {
         // 查找 '<'
-        size_t open = data.find('<', pos);
-        if (open == std::string_view::npos) break;
+        size_t open = buffer_view.find('<', pos);
+        if (open == std::string_view::npos) {
+            buffer_.clear(); // 没有找到 '<'，清空缓冲区
+            buffer_.append(data.data(), data.size()); // 保留未处理数据
+            
+            LOG_WARN("L2Parser", "无法找到 '<', 丢弃缺失数据, 保留新缓冲区数据: {}", buffer_);
+            return event_list;
+        }
 
         // 查找 '>'
-        size_t close = data.find('>', open);
-        if (close == std::string_view::npos) break;
+        size_t close = buffer_view.find('>', open);
+        if (close == std::string_view::npos) {
+            buffer_ = buffer_.substr(open); // 保留不完整部分
 
+            LOG_WARN("L2Parser", "无法找到 '>', 保留不完整数据到缓冲区: {}", buffer_);
+            return event_list;
+        }
+        
         // 提取整个 <...> 内容
-        std::string_view full_record = data.substr(open + 1, close - open - 1);
+        std::string_view full_record = buffer_view.substr(open + 1, close - open - 1);
+        
         // 按 '#' 分割为多个订单
-        std::string_view current = full_record;
         size_t start = 0;
         size_t end = 0;
 
-        while ((end = current.find('#', start)) != std::string_view::npos) {
-            std::string_view order_part = current.substr(start, end - start);
+        while ((end = full_record.find('#', start)) != std::string_view::npos) {
+            std::string_view order_part = full_record.substr(start, end - start);
             if (!order_part.empty()) {
                 auto fields = splitByComma(order_part);
                 if (type == "order"){
                     if (fields.size() == ORDER_FIELDS) {
                         event_list.emplace_back(L2Order(fields));
                     } else {
-                        LOG_WARN("L2Parser", "order字段数不匹配, data:{}", data);
+                        LOG_WARN("L2Parser", "buffer_:{}, open:{}, length:{}", buffer_, open, close-open-1);
+                        LOG_WARN("L2Parser", "order字段数不匹配, data:{}", full_record);
                     }
                 } else if (type == "trade"){
                     if (fields.size() == TRADE_FIELDS) {
                         event_list.emplace_back(L2Trade(fields));
                     } else {
-                        LOG_WARN("L2Parser", "trade字段数不匹配, data:{}", data);
+                        LOG_WARN("L2Parser", "buffer_:{}, open:{}, length:{}", buffer_, open, close-open-1);
+                        LOG_WARN("L2Parser", "trade字段数不匹配, data:{}", full_record);
                     }
                 }
             }
             start = end + 1;  // 跳过 '#'
         }
 
-        // 处理最后一个 # 后的部分（如果没有 #，就是整个 full_record）
-        // if (start < current.size()) {
-        //     std::string_view last_order = current.substr(start);
-        //     if (!last_order.empty()) {
-        //         auto fields = splitByComma(last_order);
-        //         if (fields.size() == EXPECTED_FIELDS) {
-        //             data_list.emplace_back(constructor(fields));
-        //         } else {
-        //             LOG_WARN("L2Parser", "字段数不匹配");
-        //         }
-        //     }
-        // }
-
         pos = close + 1; // 移动到 '>' 之后
     }
-
+    buffer_.clear(); // 全部处理完，清空缓冲区
     return event_list;
 }
 

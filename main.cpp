@@ -45,10 +45,6 @@ int main() {
         OrderSubscriber.connect();
         TradeSubscriber.connect(); 
 
-
-
-
-
         // 初始化交易信号发送服务器
         auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
         // while (true){
@@ -59,7 +55,7 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "000592.SZ";
+        std::string symbol = "300604.SZ";
 
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 

@@ -50,6 +50,8 @@ private:
     std::string password_;
     std::string type_;
 
+    std::string buffer_; // 用于存储接收数据的缓冲区
+
     std::atomic<bool> running_{false};
     std::thread recvThread_;
     SOCKET sock_{INVALID_SOCKET};

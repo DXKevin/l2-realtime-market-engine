@@ -83,7 +83,7 @@ void OrderBook::runProcessingLoop() {
         }
 
         // 检查涨停撤单
-        // checkLimitUpWithdrawal();
+        checkLimitUpWithdrawal();
 
         // 定期打印订单簿
         ++print_book_count;
@@ -409,44 +409,69 @@ void OrderBook::printOrderBook(int level_num) const {
 
 // 检查涨停撤单情况
 void OrderBook::checkLimitUpWithdrawal() {
+    if (is_send_){
+        return; // 已经发送过警告, 不再重复发送
+    }
 
     // 如果没有买盘则直接返回
     if (bid_volume_at_price_.empty()) {
         return;
     }
 
+    int fake_limit_up_price = 0;
+    int best_bid_price = 0;
+    int best_ask_price = 0;
+    int best_bid_volume = 0;
+    int best_ask_volume = 0;
+
     auto best_bid_it = bid_volume_at_price_.rbegin();
-    int current_volume  = best_bid_it->second;
-    int current_price  = best_bid_it->first;
+    auto best_ask_it = ask_volume_at_price_.rbegin();
+
+    if (best_bid_it != bid_volume_at_price_.rend()){
+        best_bid_price = best_bid_it->first;
+        best_bid_volume = best_bid_it->second;
+    }
+
+    if (best_ask_it != ask_volume_at_price_.rend()){
+        best_ask_price = best_ask_it->first;
+        best_ask_volume = best_ask_it->second;
+    }
+
+    fake_limit_up_price = std::max(best_bid_price, best_ask_price); // 涨停价假设为当前最佳价+1元
+
+    if (best_bid_price < fake_limit_up_price) {
+        max_bid_volume_ = 0; // 买一价不是涨停价, 重置最高买一量
+        return;
+    }
+
+    const long long THRESHOLD = 500000000000LL; // 5000万 * 10000
+    if (static_cast<long long>(best_bid_volume) * best_bid_price < THRESHOLD) {
+        return; // 买一量 * 卖一价 < 5000万, 不考虑涨停撤单
+    }
 
     // 计算买一价位及以下的总卖单量
     int total_ask_volume_at_or_below_best_bid = 0;
     for (auto it = ask_volume_at_price_.begin(); it != ask_volume_at_price_.end(); ++it) {
-        if (it->first <= current_price) {
+        if (it->first <= best_bid_price) {
             total_ask_volume_at_or_below_best_bid += it->second;
         } else {
             break;
         }
     }
 
-    // 判断涨停状态
-    if (total_ask_volume_at_or_below_best_bid > 0) {
-        if (1000 * total_ask_volume_at_or_below_best_bid > current_volume) {
-        // 代表买一价位及以下有大量卖单, 说明并非涨停状态, 不做处理
-        return;
-        }
-    }
+    // 计算封单量
+    int fengdan_volume = best_bid_volume - total_ask_volume_at_or_below_best_bid;
 
     // 更新最大买一量
-    if (current_volume > max_bid_volume_){
-        max_bid_volume_ = current_volume;
+    if (fengdan_volume > max_bid_volume_){
+        max_bid_volume_ = fengdan_volume;
         // LOG_INFO(module_name, "[{}] 创历史最高买一量: {}, 价格: {}", symbol_, max_bid_volume_, current_price / 10000.0);
         
         return; // 若发生更新, 肯定是买盘增加了, 直接返回
     }
 
     // 检查是否触发涨停撤单监测条件
-    if (max_bid_volume_ > 0 && current_volume * 3 < max_bid_volume_ * 2) {
+    if (max_bid_volume_ > 0 && fengdan_volume * 3 < max_bid_volume_ * 2) {
         
         // 放发生交易请求的部分
         if (send_server_) {
@@ -454,10 +479,11 @@ void OrderBook::checkLimitUpWithdrawal() {
                 symbol_, 
                 stock_with_accounts_
             ));
+            // is_send_ = true;
         }
 
-        LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前买一量 {} 低于历史最高买一量 {} 的 2/3", 
-            symbol_, current_volume, max_bid_volume_);
+        LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前封单量 {} 低于历史最高封单量 {} 的 2/3", 
+            symbol_, fengdan_volume, max_bid_volume_);
     }
 }
 

@@ -73,6 +73,7 @@ private:
     // 工作线程
     std::thread processing_thread_;
     std::atomic<bool> running_{true};
+    std::atomic<bool> is_send_{false};
 
     // 外部关联数据
     std::shared_ptr<SendServer> send_server_;
