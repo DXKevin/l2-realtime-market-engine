@@ -136,7 +136,7 @@ int main() {
         std::cin.get();
 
     } catch (const std::exception& ex) {
-        std::cerr << "异常终止: " << ex.what() << std::endl;
+        LOG_ERROR(module_name, "异常终止: {}", ex.what());
         return -1;
     }
 }
