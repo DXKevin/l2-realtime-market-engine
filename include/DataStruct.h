@@ -69,8 +69,6 @@ inline int timeStrToInt(const std::string& time_str) {
     }
 }
 
-
-// 辅助函数：安全地将 string_view 转为 int（仅用于小整数）
 inline int svToInt(std::string_view sv) {
     if (sv.empty()) {
         return 0;
@@ -264,7 +262,6 @@ struct MarketSpot {
     int transaction_sell_cancel_number; // 卖出撤单笔数 *仅限上交所
     int transaction_sell_cancel_volume; // 卖出撤单量 *仅限上交所
 };
-
 
 struct MarketEvent {
     enum class EventType { ORDER, TRADE, MARKET_SPOT } type;

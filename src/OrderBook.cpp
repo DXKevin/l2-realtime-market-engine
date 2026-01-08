@@ -502,21 +502,27 @@ void OrderBook::checkLimitUpWithdrawal() {
     fengdan_ratio_set_.insert(current_ratio);
     limit_up_fengdan_ratios_[last_event_timestamp_] = current_ratio;
 
+    // 撤单策略1
+    auto s1 = [&](){
+        if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.2) {
 
-    // 检查是否触发涨停撤单监测条件
-    if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.2) {
-        
-        // 放发生交易请求的部分
-        if (send_server_) {
-            send_server_->send(formatStockAccount(
-                symbol_, 
-                stock_with_accounts_
-            ));
-            // is_send_ = true;
+            // 放发生交易请求的部分
+            if (send_server_) {
+                send_server_->send(formatStockAccount(
+                    symbol_, 
+                    stock_with_accounts_
+                ));
+                // is_send_ = true;
+            }
+
+            LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下降超过20%。", 
+                symbol_, fengdan_volume, max_bid_volume_);
         }
+    };
 
-        LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下降超过20%。", 
-            symbol_, fengdan_volume, max_bid_volume_);
+    // 9:19:50 - 9:20:00 执行策略
+    if (last_event_timestamp_ >= 33590000 && last_event_timestamp_ <= 33600000){
+        s1();
     }
 }
 

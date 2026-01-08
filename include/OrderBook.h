@@ -51,7 +51,7 @@ private:
     
     std::string symbol_;
     
-    int max_bid_volume_ = 0; // 历史最高买一量
+    int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
     // 封单比例时间窗口
