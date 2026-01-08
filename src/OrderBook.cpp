@@ -437,16 +437,19 @@ void OrderBook::checkLimitUpWithdrawal() {
         best_ask_volume = best_ask_it->second;
     }
 
-    fake_limit_up_price = std::max(best_bid_price, best_ask_price); // 涨停价假设为当前最佳价+1元
+    // 涨停价假设
+    fake_limit_up_price = std::max(best_bid_price, best_ask_price); 
 
+    // 买一价不是涨停价, 重置最高买一量
     if (best_bid_price < fake_limit_up_price) {
-        max_bid_volume_ = 0; // 买一价不是涨停价, 重置最高买一量
+        max_bid_volume_ = 0; 
         return;
     }
 
-    const long long THRESHOLD = 500000000000LL; // 5000万 * 10000
+    // 买一金额 < 1000万, 不考虑涨停撤单判断
+    const long long THRESHOLD = 100000000000LL; // 1000万 * 10000
     if (static_cast<long long>(best_bid_volume) * best_bid_price < THRESHOLD) {
-        return; // 买一量 * 卖一价 < 5000万, 不考虑涨停撤单
+        return; 
     }
 
     // 计算买一价位及以下的总卖单量
@@ -462,7 +465,7 @@ void OrderBook::checkLimitUpWithdrawal() {
     // 计算封单量
     int fengdan_volume = best_bid_volume - total_ask_volume_at_or_below_best_bid;
 
-    // 更新最大买一量
+    // 更新最大封单量
     if (fengdan_volume > max_bid_volume_){
         max_bid_volume_ = fengdan_volume;
         // LOG_INFO(module_name, "[{}] 创历史最高买一量: {}, 价格: {}", symbol_, max_bid_volume_, current_price / 10000.0);
@@ -470,8 +473,26 @@ void OrderBook::checkLimitUpWithdrawal() {
         return; // 若发生更新, 肯定是买盘增加了, 直接返回
     }
 
+    // 删除超过5s的封单比例记录
+    int old_event_timestamp = last_event_timestamp_ - 5000;
+    limit_up_fengdan_ratios_.erase(limit_up_fengdan_ratios_.begin(), limit_up_fengdan_ratios_.upper_bound(old_event_timestamp));
+
+    // 计算当前封单比例
+    double current_ratio = (max_bid_volume_ > 0) ? static_cast<double>(fengdan_volume) / max_bid_volume_ : 0.0;
+    
+    // 计算时间窗口内封单比例变化
+
+    double ratio_change = 0.0;
+    if (!limit_up_fengdan_ratios_.empty()) {
+        double oldest_ratio = limit_up_fengdan_ratios_.begin()->second;
+        ratio_change = oldest_ratio - current_ratio;
+    }
+
+    limit_up_fengdan_ratios_[last_event_timestamp_] = current_ratio;
+
+
     // 检查是否触发涨停撤单监测条件
-    if (max_bid_volume_ > 0 && fengdan_volume * 3 < max_bid_volume_ * 2) {
+    if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.2) {
         
         // 放发生交易请求的部分
         if (send_server_) {
@@ -482,7 +503,7 @@ void OrderBook::checkLimitUpWithdrawal() {
             // is_send_ = true;
         }
 
-        LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前封单量 {} 低于历史最高封单量 {} 的 2/3", 
+        LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下降超过20%。", 
             symbol_, fengdan_volume, max_bid_volume_);
     }
 }

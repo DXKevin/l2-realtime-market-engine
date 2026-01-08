@@ -53,6 +53,9 @@ private:
     int max_bid_volume_ = 0; // 历史最高买一量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
+    // 封单比例时间窗口
+    std::map<int, double> limit_up_fengdan_ratios_;
+    
     // 价格 → 该档位总挂单量
     std::map<int, int> bid_volume_at_price_;
     std::map<int, int> ask_volume_at_price_;
