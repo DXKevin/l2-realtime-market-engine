@@ -515,8 +515,8 @@ void OrderBook::checkLimitUpWithdrawal() {
                 // is_send_ = true;
             }
 
-            LOG_WARN(module_name, "[{}] 涨停撤单警告: 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下降超过20%。", 
-                symbol_, fengdan_volume, max_bid_volume_);
+            LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下降超过20%。", 
+                symbol_, current_ratio, fengdan_volume, max_bid_volume_);
         }
     };
 
