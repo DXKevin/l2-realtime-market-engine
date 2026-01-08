@@ -6,6 +6,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <deque>
+#include <set>
 #include <functional>
 #include <unordered_set>
 
@@ -55,6 +56,8 @@ private:
 
     // 封单比例时间窗口
     std::map<int, double> limit_up_fengdan_ratios_;
+    // 封单比例有序集合
+    std::multiset<double> fengdan_ratio_set_;
     
     // 价格 → 该档位总挂单量
     std::map<int, int> bid_volume_at_price_;

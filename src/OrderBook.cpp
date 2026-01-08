@@ -7,7 +7,7 @@
 
 
 static const char* module_name = "OrderBook";
-static const int EVENT_TIMEOUT_MS = 20000; // 事件处理超时阈值，单位毫秒
+static const int EVENT_TIMEOUT_MS = 300000; // 事件处理超时阈值，单位毫秒
 
 OrderBook::OrderBook(
     const std::string& symbol, 
@@ -59,7 +59,7 @@ void OrderBook::runProcessingLoop() {
     int print_book_count = 0;
 
     const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
-    const int PRINT_INTERVAL_EVENTS = 100; // 每处理 100 笔事件打印一次
+    const int PRINT_INTERVAL_EVENTS = 10; // 每处理 10 笔事件打印一次
 
     while (running_) {
         MarketEvent evt;
@@ -473,21 +473,33 @@ void OrderBook::checkLimitUpWithdrawal() {
         return; // 若发生更新, 肯定是买盘增加了, 直接返回
     }
 
-    // 删除超过5s的封单比例记录
+    // 记录封单比例的时间窗口
     int old_event_timestamp = last_event_timestamp_ - 5000;
-    limit_up_fengdan_ratios_.erase(limit_up_fengdan_ratios_.begin(), limit_up_fengdan_ratios_.upper_bound(old_event_timestamp));
+
+    auto it = limit_up_fengdan_ratios_.begin();
+    while (it != limit_up_fengdan_ratios_.end() && it->first < old_event_timestamp) {
+        double ratio = it->second;
+
+        // 同步清除超时的封单比例记录
+        auto it_set = fengdan_ratio_set_.find(ratio);
+        if (it_set != fengdan_ratio_set_.end()) {
+            fengdan_ratio_set_.erase(it_set);
+        }
+        it = limit_up_fengdan_ratios_.erase(it);
+    }
 
     // 计算当前封单比例
     double current_ratio = (max_bid_volume_ > 0) ? static_cast<double>(fengdan_volume) / max_bid_volume_ : 0.0;
     
     // 计算时间窗口内封单比例变化
-
     double ratio_change = 0.0;
-    if (!limit_up_fengdan_ratios_.empty()) {
-        double oldest_ratio = limit_up_fengdan_ratios_.begin()->second;
-        ratio_change = oldest_ratio - current_ratio;
+    if (!fengdan_ratio_set_.empty()) {
+        double max_ratio = *fengdan_ratio_set_.rbegin();
+        ratio_change = max_ratio - current_ratio;
     }
 
+    // 记录当前封单比例
+    fengdan_ratio_set_.insert(current_ratio);
     limit_up_fengdan_ratios_[last_event_timestamp_] = current_ratio;
 
 
