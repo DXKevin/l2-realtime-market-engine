@@ -3,6 +3,7 @@
 #include "Logger.h"
 #include "Base64Decoder.h"
 #include "L2Parser.h"
+#include "ReadFile.h"
 
 
 
@@ -77,8 +78,19 @@ void L2HttpDownloader::start_download_async(const std::string& symbol, const std
     pending_tasks_.emplace_back(std::move(task));
 }
 
-void L2HttpDownloader::download(const std::string& symbol, const std::string& type) {
+void L2HttpDownloader::download_and_parse(const std::string& symbol, const std::string& type) {
+    //std::string result = download(symbol, type);
 
+    std::string result = "";
+    if (type == "Order") { 
+        result = readCsvFile("data\\20260106_Order_000592.SZ.csv");
+    } else if (type == "Tran") {
+        result = readCsvFile("data\\20260106_Tran_000592.SZ.csv");
+    }
+    parse_data(symbol, type, result);
+}
+
+std::string L2HttpDownloader::download(const std::string& symbol, const std::string& type) {
     httplib::Client cli(base_url_);
     httplib::Headers headers = {
         {"Cookie", cookie_}
@@ -93,7 +105,7 @@ void L2HttpDownloader::download(const std::string& symbol, const std::string& ty
 
     if (!res || res->status != 200) {
         LOG_ERROR("L2HttpDownloader", "下载数据失败，无法连接到服务器或响应错误");
-        return;
+        return "";
     }
 
     nlohmann::json res_json = nlohmann::json::parse(res->body);
@@ -101,6 +113,7 @@ void L2HttpDownloader::download(const std::string& symbol, const std::string& ty
 
         int error_code = res_json["Code"];
         LOG_ERROR("L2HttpDownloader", "下载数据失败，服务器返回错误代码: {}", error_code);
+        return "";
     }
 
     // 提取并解压gzip数据
@@ -110,14 +123,16 @@ void L2HttpDownloader::download(const std::string& symbol, const std::string& ty
     auto decompressed = gzip_decompress(decoded);
 
     std::string result(decompressed.begin(), decompressed.end());
-    std::string_view result_view(result);
+    return result;
+}
 
+void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& type, const std::string_view result_view) {
     // 解析数据
     size_t pos = 0;
     constexpr size_t ORDER_FIELDS = 14;
     constexpr size_t TRADE_FIELDS = 15;
 
-    LOG_INFO("L2HttpDownloader", "开始解析下载数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节", symbol, type, result.size());
+    LOG_INFO("L2HttpDownloader", "开始解析下载数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节", symbol, type, result_view.size());
     while (pos < result_view.size()) {
         size_t next = result_view.find('\n', pos);
 
@@ -151,7 +166,7 @@ void L2HttpDownloader::download(const std::string& symbol, const std::string& ty
                     LOG_WARN("L2HttpDownloader", "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
                 }
             } else {
-                LOG_WARN("L2HttpDownloader", "order字段数不匹配, data:{}", line);
+                LOG_WARN("L2HttpDownloader", "order字段数不匹配, data:{} --> size:{}", line, fields.size());
             }
         } else if (type == "Tran") {
             if (fields.size() == TRADE_FIELDS) {
@@ -169,7 +184,7 @@ void L2HttpDownloader::download(const std::string& symbol, const std::string& ty
                 }
 
             } else {
-                LOG_WARN("L2HttpDownloader", "trade字段数不匹配, data:{}", line);
+                LOG_WARN("L2HttpDownloader", "trade字段数不匹配, data:{} --> size:{}", line, fields.size());
             }
         }
         pos = next + 1;

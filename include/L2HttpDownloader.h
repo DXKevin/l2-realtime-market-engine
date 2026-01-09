@@ -20,7 +20,9 @@ public:
     void login();
     
     void start_download_async(const std::string& symbol, const std::string& type);
-    void download(const std::string& symbol, const std::string& type);
+    void download_and_parse(const std::string& symbol, const std::string& type);
+    std::string download(const std::string& symbol, const std::string& type);
+    void parse_data(const std::string& symbol, const std::string& type, const std::string_view result_view);
     void waitAll();
 
 private:

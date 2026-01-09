@@ -35,9 +35,10 @@ private:
     bool isOrderExists(const std::string& order_id) const;
     void addOrder(const L2Order& order);
     void onTrade(const L2Trade& trade);
-    void onCancelOrder(const std::string& order_id);
+    void onCancelOrder(const std::string& order_id, int cancel_volume);
     void removeOrder(const std::string& order_id);
     void printOrderBook(int level_num) const;
+    void printloop(int level_num);
 
     void checkLimitUpWithdrawal();
 
@@ -78,8 +79,12 @@ private:
     
     // 工作线程
     std::thread processing_thread_;
+    std::thread print_thread_;
     std::atomic<bool> running_{true};
     std::atomic<bool> is_send_{false};
+
+    // 锁
+    mutable std::mutex mtx_;
 
     // 外部关联数据
     std::shared_ptr<SendServer> send_server_;

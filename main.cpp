@@ -57,7 +57,7 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "600895.SH";
+        std::string symbol = "000592.SZ";
 
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 
@@ -72,9 +72,9 @@ int main() {
             orderBooksPtr
         );
 
-        downloader.login();
-        downloader.download("600895.SH", "Order");
-        downloader.download("600895.SH", "Tran");
+        //downloader.login();
+        downloader.download_and_parse(symbol, "Order");
+        downloader.download_and_parse(symbol, "Tran");
 
         // OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
         // TradeSubscriber.subscribe(symbol); // 订阅逐笔成交

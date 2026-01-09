@@ -32,6 +32,7 @@ OrderBook::OrderBook(
     }
 
     processing_thread_ = std::thread(&OrderBook::runProcessingLoop, this);
+    print_thread_ = std::thread(&OrderBook::printloop, this, 5);
 }
 
 OrderBook::~OrderBook() {
@@ -49,6 +50,10 @@ void OrderBook::stop() {
         if (processing_thread_.joinable()) {
             processing_thread_.join();
         }
+
+        if (print_thread_.joinable()) {
+            print_thread_.join();
+        }
     }
 }
 
@@ -59,11 +64,13 @@ void OrderBook::runProcessingLoop() {
     int print_book_count = 0;
 
     const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
-    const int PRINT_INTERVAL_EVENTS = 100; // 每处理 100 笔事件打印一次
+    const int PRINT_INTERVAL_EVENTS = 10; // 每处理 100 笔事件打印一次
 
     while (running_) {
         MarketEvent evt;
         event_queue.wait_dequeue(evt);
+
+        std::lock_guard<std::mutex> lock(mtx_);
 
         if (!running_) break;
 
@@ -83,7 +90,7 @@ void OrderBook::runProcessingLoop() {
         }
 
         // 检查涨停撤单
-        checkLimitUpWithdrawal();
+        // checkLimitUpWithdrawal();
 
         // 定期打印订单簿
         // if (last_event_timestamp_ >= 33900000 && last_event_timestamp_ <= 34200000) {
@@ -91,11 +98,11 @@ void OrderBook::runProcessingLoop() {
         //     continue;
         // }
 
-        ++print_book_count;
-        if (print_book_count == PRINT_INTERVAL_EVENTS) {
-            printOrderBook(5);
-            print_book_count = 0;
-        }
+        // ++print_book_count;
+        // if (print_book_count == PRINT_INTERVAL_EVENTS) {
+        //     printOrderBook(5);
+        //     print_book_count = 0;
+        // }
     }
 }
 
@@ -116,7 +123,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
         if (order.type == 10) {
             // 处理撤单可能存在的乱序情况
             if (isOrderExists(order.id)) {
-                onCancelOrder(order.id);
+                onCancelOrder(order.id, order.volume);
                 return;
             } else {
                 // 未找到订单，加入等待队列
@@ -169,7 +176,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
             }
             
             if (isOrderExists(order_id)) {
-                onCancelOrder(order_id);
+                onCancelOrder(order_id, trade.volume);
                 return;
             } else {
                 
@@ -207,8 +214,8 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
                 // 长时间未找到订单，丢弃该成交请求
                 return;
             } else {
-                LOG_INFO(module_name, "[{}] 逐笔成交买方委托号:{} 卖方委托号:{} 均未找到对应订单, 加入等待队列", 
-                    symbol_, trade.buy_id, trade.sell_id);
+                // LOG_INFO(module_name, "[{}] 逐笔成交买方委托号:{} 卖方委托号:{} 均未找到对应订单, 加入等待队列", 
+                //     symbol_, trade.buy_id, trade.sell_id);
                 pending_events_.push_back(event);
             }
         } 
@@ -262,14 +269,25 @@ void OrderBook::onTrade(const L2Trade& trade) {
         if (index_it == order_index_.end()) {
             return;
         }
-        // 取成交量和挂单量较小值进行减少, 防止聚合订单簿与总订单簿不一致
-        // int reduce_fix = std::min(trade.volume, index_it->second->volume);
 
-        index_it->second->volume -= trade.volume;
-        
         int price = index_it->second->price;
         int side = index_it->second->side;
         
+        if (symbol_[0] == '6' && trade.side == side) {
+            // 上海市场买卖方向与成交方向相同的订单不处理封单量, 因为主动成交的一方委托量不会出现在订单簿中
+            // if (id == "24529530") {
+            //     LOG_INFO(module_name, "主动成交订单ID: {}，价格: {}, 方向: {}", id, price, side);
+            // }
+            return; 
+        } 
+
+        // 更新订单簿
+        index_it->second->volume -= trade.volume;
+
+        // if (id == "24529530") {
+        //         LOG_INFO(module_name, "被动成交订单ID: {}, 成交数量:{}, 剩余数量: {}, 方向: {}", id, trade.volume, index_it->second->volume, side);
+        // }
+
         // 更新价格档位总挂单量
         if (side == 1) {
             bid_volume_at_price_[price] -= trade.volume;
@@ -283,15 +301,9 @@ void OrderBook::onTrade(const L2Trade& trade) {
             }
         }
 
-        if (index_it->second->volume == 0) {
+        if (index_it->second->volume <= 0) {
             // 如果订单量为0, 从订单簿和索引中移除
             removeOrder(id);
-
-        } else if (index_it->second->volume < 0)
-        {
-            removeOrder(id);
-            // LOG_WARN(module_name, "[{}] 订单ID:{} 处理后数量为负, 已经移除该订单", 
-            //     symbol_, id);
         }
     };
     
@@ -303,31 +315,35 @@ void OrderBook::onTrade(const L2Trade& trade) {
 }
 
 // 处理撤单
-void OrderBook::onCancelOrder(const std::string& order_id) {
+void OrderBook::onCancelOrder(const std::string& order_id, int cancel_volume) {
     auto index_it = order_index_.find(order_id);
     if (index_it == order_index_.end()) {
         return;
     }
     
+    // 更新订单簿
+    index_it->second->volume -= cancel_volume;
+
     int price = index_it->second->price;
     int side = index_it->second->side;
-    int volume = index_it->second->volume;
-    
+
     // 更新价格档位总挂单量
     if (side == 1) {
-        bid_volume_at_price_[price] -= volume;
+        bid_volume_at_price_[price] -= cancel_volume;
         if (bid_volume_at_price_[price] <= 0) {
             bid_volume_at_price_.erase(price);
         }
     } else {
-        ask_volume_at_price_[price] -= volume;
+        ask_volume_at_price_[price] -= cancel_volume;
         if (ask_volume_at_price_[price] <= 0) {
             ask_volume_at_price_.erase(price);
         }
     }
 
-    removeOrder(order_id);
-
+    if (index_it->second->volume <= 0) {
+        // 如果订单量为0, 从订单簿和索引中移除
+        removeOrder(order_id);
+    }
 }
 
 // 从订单簿中移除订单
@@ -411,6 +427,18 @@ void OrderBook::printOrderBook(int level_num) const {
     }
 
     LOG_INFO(module_name, "==================================");
+}
+
+// 循环打印
+void OrderBook::printloop(int level_num) {
+    while (running_) {
+        {
+            std::lock_guard<std::mutex> lock(mtx_);
+            printOrderBook(level_num);
+        }
+        
+        std::this_thread::sleep_for(std::chrono::seconds(1)); // 每1秒打印一次
+    }
 }
 
 // 检查涨停撤单情况
@@ -510,7 +538,7 @@ void OrderBook::checkLimitUpWithdrawal() {
     
     // 撤单策略1
     auto s1 = [&](){
-        if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.2) {
+        if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.2) {
 
             // 放发生交易请求的部分
             if (send_server_) {
@@ -521,7 +549,7 @@ void OrderBook::checkLimitUpWithdrawal() {
                 // is_send_ = true;
             }
 
-            LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下降超过20%。", 
+            LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下降超过20%。", 
                 symbol_, current_ratio, fengdan_volume, max_bid_volume_);
         }
     };
