@@ -8,7 +8,7 @@
 #include "OrderBook.h"
 #include "SendServer.h"
 #include "ReceiveServer.h"
-
+#include "L2HttpDownloader.h"
 
 
 
@@ -25,7 +25,8 @@ int main() {
         // 读取配置文件
         ConfigReader config("config.ini");
 
-        std::string host = config.get("server", "host");
+        std::string http_url = config.get("server", "http_url");
+        std::string host = config.get("server", "tcp_host");
         int order_port = config.getInt("server", "order_port");
         int trade_port = config.getInt("server", "trade_port");
 
@@ -37,13 +38,14 @@ int main() {
         auto orderBooksPtr = std::make_shared<std::unordered_map<std::string, std::unique_ptr<OrderBook>>>();
         auto stockWithAccountsPtr = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
 
-        // 初始化行情服务器连接
-        L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
-        L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
+        // // 初始化行情服务器连接
+        // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
+        // L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
 
-        // 登录行情服务器
-        OrderSubscriber.connect();
-        TradeSubscriber.connect(); 
+        // // 登录行情服务器
+        // OrderSubscriber.connect();
+        // TradeSubscriber.connect(); 
+
 
         // 初始化交易信号发送服务器
         auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
@@ -55,7 +57,7 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "002202.SZ";
+        std::string symbol = "600895.SH";
 
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 
@@ -63,9 +65,19 @@ int main() {
             stockWithAccountsPtr
         );
 
-        OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
-        TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
-            
+        L2HttpDownloader downloader(
+            http_url,
+            username,
+            password,
+            orderBooksPtr
+        );
+
+        downloader.login();
+        downloader.download("600895.SH", "Order");
+        downloader.download("600895.SH", "Tran");
+
+        // OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
+        // TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
             
         // // 前端消息接收服务器回调函数
         // auto handleMessage = [

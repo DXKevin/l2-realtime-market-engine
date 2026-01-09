@@ -154,7 +154,6 @@ struct L2Trade {
     std::string amount;         // 成交金额
     int side;           // 1 = buy, 2 = sell
     int type;           // 0 = 成交, 1 = 撤单 
-    std::string channel; // 频道代码
     std::string sell_id;        // 卖方委托号
     std::string buy_id;         // 买方委托号
 
@@ -172,7 +171,6 @@ struct L2Trade {
         , amount(fields[6])
         , side(svToInt(fields[7]))
         , type(svToInt(fields[8]))
-        , channel(fields[9])
         , sell_id(fields[10])
         , buy_id(fields[11])
     {

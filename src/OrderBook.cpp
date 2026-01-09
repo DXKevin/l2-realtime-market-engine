@@ -7,7 +7,7 @@
 
 
 static const char* module_name = "OrderBook";
-static const int EVENT_TIMEOUT_MS = 300000; // 事件处理超时阈值，单位毫秒
+static const int EVENT_TIMEOUT_MS = 30000; // 事件处理超时阈值，单位毫秒
 
 OrderBook::OrderBook(
     const std::string& symbol, 
@@ -91,13 +91,11 @@ void OrderBook::runProcessingLoop() {
         //     continue;
         // }
 
-
         ++print_book_count;
         if (print_book_count == PRINT_INTERVAL_EVENTS) {
             printOrderBook(5);
             print_book_count = 0;
         }
-
     }
 }
 
@@ -209,6 +207,8 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
                 // 长时间未找到订单，丢弃该成交请求
                 return;
             } else {
+                LOG_INFO(module_name, "[{}] 逐笔成交买方委托号:{} 卖方委托号:{} 均未找到对应订单, 加入等待队列", 
+                    symbol_, trade.buy_id, trade.sell_id);
                 pending_events_.push_back(event);
             }
         } 
@@ -251,7 +251,7 @@ void OrderBook::addOrder(const L2Order& order) {
 
     auto& volume_map = (order.side == 1) ? bid_volume_at_price_ : ask_volume_at_price_;
     volume_map[order.price] += order.volume;
-    // order.info();
+    //order.info();
 }
 
 // 处理成交
@@ -452,8 +452,8 @@ void OrderBook::checkLimitUpWithdrawal() {
         return;
     }
 
-    // 买一金额 < 1000万, 不考虑涨停撤单判断
-    const long long THRESHOLD = 100000000000LL; // 1000万 * 10000
+    // 买一金额 < 500万, 不考虑涨停撤单判断
+    const long long THRESHOLD = 50000000000LL; // 500万 * 10000
     if (static_cast<long long>(best_bid_volume) * best_bid_price < THRESHOLD) {
         return; 
     }
@@ -507,7 +507,7 @@ void OrderBook::checkLimitUpWithdrawal() {
     // 记录当前封单比例
     fengdan_ratio_set_.insert(current_ratio);
     limit_up_fengdan_ratios_[last_event_timestamp_] = current_ratio;
-
+    
     // 撤单策略1
     auto s1 = [&](){
         if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.2) {
