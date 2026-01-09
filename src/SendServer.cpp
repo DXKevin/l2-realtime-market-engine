@@ -36,7 +36,7 @@ void SendServer::runServer() {
         if (hPipe == INVALID_HANDLE_VALUE) {
             DWORD err = GetLastError();
             LOG_ERROR("SendServer", "CreateNamedPipeA failed with error: " + std::to_string(err));
-            Sleep(1000);
+            Sleep(5000);
             continue;
         }
 
@@ -74,7 +74,7 @@ void SendServer::runServer() {
                 // 其他错误也视为断开（可选）
                 break;
             }
-            Sleep(1000);
+            Sleep(5000); // 每5秒发送一次心跳
             LOG_INFO("SendServer", "与客户端保持连接中...");
         }
 
