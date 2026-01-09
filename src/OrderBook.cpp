@@ -61,10 +61,8 @@ void OrderBook::stop() {
 void OrderBook::runProcessingLoop() {
 
     int process_pending_events_count = 0;
-    int print_book_count = 0;
 
     const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
-    const int PRINT_INTERVAL_EVENTS = 10; // 每处理 100 笔事件打印一次
 
     while (running_) {
         MarketEvent evt;
@@ -90,19 +88,7 @@ void OrderBook::runProcessingLoop() {
         }
 
         // 检查涨停撤单
-        // checkLimitUpWithdrawal();
-
-        // 定期打印订单簿
-        // if (last_event_timestamp_ >= 33900000 && last_event_timestamp_ <= 34200000) {
-        //     printOrderBook(5);
-        //     continue;
-        // }
-
-        // ++print_book_count;
-        // if (print_book_count == PRINT_INTERVAL_EVENTS) {
-        //     printOrderBook(5);
-        //     print_book_count = 0;
-        // }
+        checkLimitUpWithdrawal();
     }
 }
 
