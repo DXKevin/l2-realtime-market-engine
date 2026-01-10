@@ -132,6 +132,12 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
     constexpr size_t ORDER_FIELDS = 14;
     constexpr size_t TRADE_FIELDS = 15;
 
+    auto it = orderbooks_ptr_->find(symbol);
+    if (it == orderbooks_ptr_->end()) {
+        LOG_WARN("L2HttpDownloader", "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
+        return;
+    }
+
     LOG_INFO("L2HttpDownloader", "开始解析下载数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节", symbol, type, result_view.size());
     while (pos < result_view.size()) {
         size_t next = result_view.find('\n', pos);
@@ -158,13 +164,8 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                     fields[8], fields[9], fields[10], fields[11], fields[12]
                 };
                 
-                auto it = orderbooks_ptr_->find(symbol);
-                if (it != orderbooks_ptr_->end()) {
-                    MarketEvent event = MarketEvent(L2Order(relevant_fields));
-                    it->second->pushEvent(event);
-                } else {
-                    LOG_WARN("L2HttpDownloader", "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
-                }
+                MarketEvent event = MarketEvent(L2Order(relevant_fields));
+                it->second->pushEvent(event);
             } else {
                 LOG_WARN("L2HttpDownloader", "order字段数不匹配, data:{} --> size:{}", line, fields.size());
             }
@@ -175,13 +176,8 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                     fields[8], fields[9], fields[10], fields[11], fields[12], fields[13]
                 };
 
-                auto it = orderbooks_ptr_->find(symbol);
-                if (it != orderbooks_ptr_->end()) {
-                    MarketEvent event = MarketEvent(L2Trade(relevant_fields));
-                    it->second->pushEvent(event);
-                } else {
-                    LOG_WARN("L2HttpDownloader", "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
-                }
+                MarketEvent event = MarketEvent(L2Trade(relevant_fields));
+                it->second->pushHistoryEvent(event);
 
             } else {
                 LOG_WARN("L2HttpDownloader", "trade字段数不匹配, data:{} --> size:{}", line, fields.size());
@@ -189,6 +185,8 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
         }
         pos = next + 1;
     }
+
+    it->second->is_history_done_ = true; // 代表
 }
 
 void L2HttpDownloader::waitAll() {

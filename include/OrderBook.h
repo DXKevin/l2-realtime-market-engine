@@ -18,14 +18,17 @@
 class OrderBook {
 public:
     explicit OrderBook(
-        const std::string& symbol,
+        const std::string symbol,
         std::shared_ptr<SendServer> send_server,
         std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts
     );
     ~OrderBook();
 
+    void pushHistoryEvent(const MarketEvent& event);
     void pushEvent(const MarketEvent& event);
     void stop();
+
+    std::atomic<bool> is_history_done_{false};
 private:
     void runProcessingLoop();
     void handleOrderEvent(const MarketEvent& event);
@@ -55,6 +58,11 @@ private:
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
+    std::vector<std::pair<int, int>> history_order_timeId;
+    std::vector<std::pair<int, int>> history_trade_timeId;
+    std::unordered_set<int> history_order_id;
+    std::unordered_set<int> history_trade_id;
+
     // 封单比例时间窗口
     std::map<int, double> limit_up_fengdan_ratios_;
     // 封单比例有序集合
@@ -75,14 +83,15 @@ private:
     std::unordered_map<std::string, std::list<OrderRef>::iterator> order_index_;
 
     // 事件队列 - MPSC
+    moodycamel::BlockingConcurrentQueue<MarketEvent> history_event_queue;
     moodycamel::BlockingConcurrentQueue<MarketEvent> event_queue;
-    
+
     // 工作线程
     std::thread processing_thread_;
     std::thread print_thread_;
     std::atomic<bool> running_{true};
     std::atomic<bool> is_send_{false};
-
+    
     // 锁
     mutable std::mutex mtx_;
 

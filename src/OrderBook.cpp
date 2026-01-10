@@ -10,7 +10,7 @@ static const char* module_name = "OrderBook";
 static const int EVENT_TIMEOUT_MS = 30000; // 事件处理超时阈值，单位毫秒
 
 OrderBook::OrderBook(
-    const std::string& symbol, 
+    const std::string symbol, 
     std::shared_ptr<SendServer> send_server,
     std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts
 ) : 
@@ -37,6 +37,10 @@ OrderBook::OrderBook(
 
 OrderBook::~OrderBook() {
     stop();
+}
+
+void OrderBook::pushHistoryEvent(const MarketEvent& event) {
+    history_event_queue.enqueue(event);
 }
 
 void OrderBook::pushEvent(const MarketEvent& event) {
