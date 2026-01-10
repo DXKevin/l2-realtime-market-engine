@@ -28,18 +28,22 @@ public:
     void pushEvent(const MarketEvent& event);
     void stop();
 
-    std::atomic<bool> is_history_done_{false};
+    std::atomic<bool> is_history_order_done_{false};
+    std::atomic<bool> is_history_trade_done_{false};
+
 private:
+    bool isHistoryDataLoadingComplete() const;
+    void generateDuplicateSets();
     void runProcessingLoop();
     void handleOrderEvent(const MarketEvent& event);
     void handleTradeEvent(const MarketEvent& event);
     void processPendingEvents();
 
-    bool isOrderExists(const std::string& order_id) const;
+    bool isOrderExists(const int order_id) const;
     void addOrder(const L2Order& order);
     void onTrade(const L2Trade& trade);
-    void onCancelOrder(const std::string& order_id, int cancel_volume);
-    void removeOrder(const std::string& order_id);
+    void onCancelOrder(const int order_id, const int cancel_volume);
+    void removeOrder(const int order_id);
     void printOrderBook(int level_num) const;
     void printloop(int level_num);
 
@@ -50,7 +54,7 @@ private:
         int volume;
         int price;
         int side;
-        std::string id;
+        int id;
     };
     
     std::string symbol_;
@@ -58,10 +62,10 @@ private:
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
-    std::vector<std::pair<int, int>> history_order_timeId;
-    std::vector<std::pair<int, int>> history_trade_timeId;
-    std::unordered_set<int> history_order_id;
-    std::unordered_set<int> history_trade_id;
+    std::vector<std::pair<int, int>> history_order_timeId_;
+    std::vector<std::pair<int, int>> history_trade_timeId_;
+    std::unordered_set<int> history_order_id_;
+    std::unordered_set<int> history_trade_id_;
 
     // 封单比例时间窗口
     std::map<int, double> limit_up_fengdan_ratios_;
@@ -80,7 +84,7 @@ private:
     std::deque<MarketEvent> pending_events_; 
 
     // 快速查找订单
-    std::unordered_map<std::string, std::list<OrderRef>::iterator> order_index_;
+    std::unordered_map<int, std::list<OrderRef>::iterator> order_index_;
 
     // 事件队列 - MPSC
     moodycamel::BlockingConcurrentQueue<MarketEvent> history_event_queue;
@@ -91,6 +95,9 @@ private:
     std::thread print_thread_;
     std::atomic<bool> running_{true};
     std::atomic<bool> is_send_{false};
+    std::atomic<bool> is_history_event_queue_done_{false};
+    std::atomic<bool> is_generate_duplicate_done_{false};
+    
     
     // 锁
     mutable std::mutex mtx_;

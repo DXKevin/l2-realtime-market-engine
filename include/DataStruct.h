@@ -69,6 +69,15 @@ inline int timeStrToInt(const std::string& time_str) {
     }
 }
 
+inline int timeIntToMs(int time_int) {
+    int H = time_int / 10000000;
+    int M = (time_int / 100000) % 100;
+    int S = (time_int / 1000) % 100;
+    int ms = time_int % 1000;
+
+    return (H * 3600 + M * 60 + S) * 1000 + ms;
+}
+
 inline int svToInt(std::string_view sv) {
     if (sv.empty()) {
         return 0;
@@ -88,20 +97,41 @@ inline int svToInt(std::string_view sv) {
     return result;
 }
 
+inline long long svToLong(std::string_view sv) {
+    if (sv.empty()) {
+        return 0;
+    }
+
+    long long result = 0;
+    std::from_chars_result res = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+
+    // 如果解析失败（如包含非数字字符），返回 0
+    // 你也可以选择抛出异常或记录日志，根据需求调整
+    if (res.ec == std::errc::invalid_argument || res.ec == std::errc::result_out_of_range) {
+        // 可选：记录警告
+        LOG_WARN("L2Parser", "Invalid integer: {}", sv);
+        return 0;
+    }
+
+    return result;
+}
+
 struct L2Order {
+    //数据原始字段
     int index;          // 推送序号
     std::string symbol; // 合约代码
-    std::string time; // 时间
-    std::string num1; // 委托编号
+    int time; // 时间
+    int num1; // 委托编号
     int price;          // 单位：0.0001 元（即 price / 10000.0 为真实价格）
     int volume;         // 股数
     int type;           // 10 = 撤单, 1 = 市价, 2 = 限价, 3 = 本方最优
     int side;           // 1 = buy, 2 = sell
-    std::string num2; // 原始订单号, 仅上交所
+    int num2; // 原始订单号, 仅上交所
     int num3;       // 逐笔数据序号, 仅上交所
     int channel;    // 交易通道号
 
-    std::string id; //无论是上交所还是深交所，统一使用这个字段
+    // 以下为衍生字段
+    int id; //无论是上交所还是深交所，统一使用这个字段
     int timestamp; // 时间戳，单位毫秒
 
     L2Order() = default;
@@ -109,13 +139,13 @@ struct L2Order {
     L2Order(const std::vector<std::string_view>& fields) 
         : index(svToInt(fields[0]))
         , symbol(fields[1])
-        , time(fields[2])
-        , num1(fields[3])
+        , time(svToInt(fields[2]))
+        , num1(svToInt(fields[3]))
         , price(svToInt(fields[4]))
         , volume(svToInt(fields[5]))
         , type(svToInt(fields[6]))
         , side(svToInt(fields[7]))
-        , num2(fields[8])
+        , num2(svToInt(fields[8]))
         , num3(svToInt(fields[9]))
         , channel(svToInt(fields[10]))
     {
@@ -126,7 +156,7 @@ struct L2Order {
             // 深圳票用num1
             id = num1;
         }
-        timestamp = timeStrToInt(time);
+        timestamp = timeIntToMs(time);
     }
 
     void info() const {
@@ -145,18 +175,20 @@ struct L2Order {
 };
 
 struct L2Trade {
+    // 数据原始字段
     int index;          // 推送序号
     std::string symbol; // 合约代码
-    std::string time; // 时间
-    std::string num1; // 成交编号
+    int time; // 时间
+    int num1; // 成交编号
     int price;          // 单位：0.0001 元（即 price / 10000.0 为真实价格）
     int volume;         // 股数
-    std::string amount;         // 成交金额
+    long long amount;         // 成交金额, 因为价格一般是一万倍表示, 所以金额可能很大, 用 long long 存储
     int side;           // 1 = buy, 2 = sell
     int type;           // 0 = 成交, 1 = 撤单 
-    std::string sell_id;        // 卖方委托号
-    std::string buy_id;         // 买方委托号
+    int sell_id;        // 卖方委托号
+    int buy_id;         // 买方委托号
 
+    // 以下为衍生字段
     int timestamp; // 时间戳，单位毫秒
 
     L2Trade() = default;
@@ -164,17 +196,17 @@ struct L2Trade {
     L2Trade(const std::vector<std::string_view>& fields) 
         : index(svToInt(fields[0]))
         , symbol(fields[1])
-        , time(fields[2])
-        , num1(fields[3])
+        , time(svToInt(fields[2]))
+        , num1(svToInt(fields[3]))
         , price(svToInt(fields[4]))
         , volume(svToInt(fields[5]))
-        , amount(fields[6])
+        , amount(svToLong(fields[6]))
         , side(svToInt(fields[7]))
         , type(svToInt(fields[8]))
-        , sell_id(fields[10])
-        , buy_id(fields[11])
+        , sell_id(svToInt(fields[10]))
+        , buy_id(svToInt(fields[11]))
     {
-        timestamp = timeStrToInt(time);
+        timestamp = timeIntToMs(time);
     }
 
     void info() const {

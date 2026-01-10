@@ -165,7 +165,7 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                 };
                 
                 MarketEvent event = MarketEvent(L2Order(relevant_fields));
-                it->second->pushEvent(event);
+                it->second->pushHistoryEvent(event);
             } else {
                 LOG_WARN("L2HttpDownloader", "order字段数不匹配, data:{} --> size:{}", line, fields.size());
             }
@@ -186,7 +186,12 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
         pos = next + 1;
     }
 
-    it->second->is_history_done_ = true; // 代表
+    // 标记历史数据下载处理完成
+    if (type == "Order") {
+        it->second->is_history_order_done_.store(true);
+    } else if (type == "Tran") {
+        it->second->is_history_trade_done_.store(true);
+    }
 }
 
 void L2HttpDownloader::waitAll() {
