@@ -57,24 +57,29 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "000592.SZ";
+        std::string symbol = "600895.SH";
 
+        
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 
             sendServerPtr,
             stockWithAccountsPtr
         );
 
-        L2HttpDownloader downloader(
-            http_url,
-            username,
-            password,
-            orderBooksPtr
-        );
+        {
+            L2HttpDownloader downloader(
+                http_url,
+                username,
+                password,
+                orderBooksPtr
+            );
 
-        //downloader.login();
-        downloader.download_and_parse(symbol, "Order");
-        downloader.download_and_parse(symbol, "Tran");
+            //downloader.login();
+            downloader.download_and_parse(symbol, "Order");
+            downloader.download_and_parse(symbol, "Tran");
+        }
+        
+        
 
         // OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
         // TradeSubscriber.subscribe(symbol); // 订阅逐笔成交

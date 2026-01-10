@@ -68,7 +68,6 @@ void L2HttpDownloader::login() {
     }
 }
 
-
 void L2HttpDownloader::start_download_async(const std::string& symbol, const std::string& type) {
     auto task = std::async(std::launch::async, [this, symbol, type]() {
         download(symbol, type);
@@ -83,9 +82,9 @@ void L2HttpDownloader::download_and_parse(const std::string& symbol, const std::
 
     std::string result = "";
     if (type == "Order") { 
-        result = readCsvFile("data\\20260106_Order_000592.SZ.csv");
+        result = readCsvFile("data/20260109_Order_600895.SH.csv");
     } else if (type == "Tran") {
-        result = readCsvFile("data\\20260106_Tran_000592.SZ.csv");
+        result = readCsvFile("data/20260109_Tran_600895.SH.csv");
     }
     parse_data(symbol, type, result);
 }

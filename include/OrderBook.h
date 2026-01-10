@@ -62,6 +62,7 @@ private:
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
+    // 历史数据去重集合
     std::vector<std::pair<int, int>> history_order_timeId_;
     std::vector<std::pair<int, int>> history_trade_timeId_;
     std::unordered_set<int> history_order_id_;
@@ -79,6 +80,10 @@ private:
     // 按价格分组的买卖订单簿
     std::map<int,std::list<OrderRef>> bids_;
     std::map<int,std::list<OrderRef>> asks_;
+
+    // 已完成买单对应成交编号集合, 对于逐笔成交中只有一方存在加入等待列表会出现重复成交扣减的情况处理
+    std::unordered_set<int> buy_order_done_ids_; 
+    std::unordered_set<int> sell_order_done_ids_;
 
     // 暂存待处理事件
     std::deque<MarketEvent> pending_events_; 
