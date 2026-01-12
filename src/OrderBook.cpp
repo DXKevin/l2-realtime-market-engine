@@ -7,7 +7,6 @@
 
 
 static const char* module_name = "OrderBook";
-static const int EVENT_TIMEOUT_MS = 30000; // 事件处理超时阈值，单位毫秒
 
 OrderBook::OrderBook(
     const std::string symbol, 
@@ -69,33 +68,27 @@ bool OrderBook::isHistoryDataLoadingComplete() const {
 // 生成历史数据去重集合
 void OrderBook::generateDuplicateSets() {
     // 生成历史数据去重集合
-    if (is_generate_duplicate_done_.load() == false) {
-        for (auto it = history_order_timeId_.rbegin(); it != history_order_timeId_.rend(); ++it) {
-            if (last_event_timestamp_ - it->first <= 60000) {
-                // 记录一分钟内的历史数据ID
-                history_order_id_.insert(it->second);
-            } else {
-                break;
-            }
+
+    LOG_INFO(module_name, "history_order_timeId__ size: {}", history_order_timeId_.size());
+    for (auto it = history_order_timeId_.begin(); it != history_order_timeId_.end(); ++it) {
+        if (last_event_timestamp_ - it->second <= 600000) {
+            // 记录一分钟内的历史数据ID
+            history_order_id_.insert(it->first);
         }
-
-        // 清空vector释放内存
-        std::vector<std::pair<int, int>>().swap(history_order_timeId_);
-
-        for (auto it = history_trade_timeId_.rbegin(); it != history_trade_timeId_.rend(); ++it) {
-            if (last_event_timestamp_ - it->first <= 60000) {
-                // 记录一分钟内的历史数据ID
-                history_trade_id_.insert(it->second);
-            } else {
-                break;
-            }
-        }
-
-        // 清空vector释放内存
-        std::vector<std::pair<int, int>>().swap(history_trade_timeId_);
-
-        is_generate_duplicate_done_.store(true);
     }
+
+    // 清空vector释放内存
+    std::vector<std::pair<int, int>>().swap(history_order_timeId_);
+
+    for (auto it = history_trade_timeId_.begin(); it != history_trade_timeId_.end(); ++it) {
+        if (last_event_timestamp_ - it->second <= 600000) {
+            // 记录一分钟内的历史数据ID
+            history_trade_id_.insert(it->first);
+        }
+    }
+
+    // 清空vector释放内存
+    std::vector<std::pair<int, int>>().swap(history_trade_timeId_);
 }
 
 // 主线程循环
@@ -103,7 +96,7 @@ void OrderBook::runProcessingLoop() {
 
     int process_pending_events_count = 0;
 
-    const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
+    const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 1 笔事件处理一次待处理事件
 
     while (running_) {
         if (isHistoryDataLoadingComplete() == false ||
@@ -116,6 +109,8 @@ void OrderBook::runProcessingLoop() {
                     // 历史数据处理完成, 生成去重集合
                     generateDuplicateSets();
                     is_history_event_queue_done_.store(true);
+                    
+                    EVENT_TIMEOUT_MS = 60000; // 将事件处理超时阈值设为1分钟
                 }
                 continue;
             }
@@ -129,17 +124,17 @@ void OrderBook::runProcessingLoop() {
 
                 // 记录历史数据时间戳与ID映射
                 history_order_timeId_.push_back(
-                    {std::get<L2Order>(hist_evt.data).timestamp, std::get<L2Order>(hist_evt.data).num1}
+                    {std::get<L2Order>(hist_evt.data).num1, std::get<L2Order>(hist_evt.data).timestamp}
                 );
             } else if (hist_evt.type == MarketEvent::EventType::TRADE) {
                 handleTradeEvent(hist_evt);
 
                 // 记录历史数据时间戳与ID映射
                 history_trade_timeId_.push_back(
-                    {std::get<L2Trade>(hist_evt.data).timestamp, std::get<L2Trade>(hist_evt.data).num1}
+                    {std::get<L2Trade>(hist_evt.data).num1, std::get<L2Trade>(hist_evt.data).timestamp}
                 );
             }
-
+            
             // 定期处理待处理事件
             ++process_pending_events_count;
             if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
@@ -184,6 +179,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
     const auto& order = std::get<L2Order>(event.data);
 
     if (history_order_id_.find(order.num1) != history_order_id_.end()) {
+        LOG_INFO(module_name, "出现重复单");
         return;
     }
 
@@ -238,6 +234,7 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
     const auto& trade = std::get<L2Trade>(event.data);
 
     if (history_trade_id_.find(trade.num1) != history_trade_id_.end()) {
+        LOG_INFO(module_name, "出现重复单");
         return;
     }
 
@@ -291,33 +288,41 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
             // 另一方订单不存在存在三种情况
             // 1、市价单, 2、乱序到达, 3、临时启动程序无原始盘口, 
             // 优先处理存在的一方并加入等待队列, 等待另一方订单到达
-            if (is_exist_buy) {
-                if (buy_order_done_ids_.find(trade.num1) != buy_order_done_ids_.end()) {
-                    // 已处理过该买单对应的成交编号，避免重复处理
-                    return;
-                } else {
-                    buy_order_done_ids_.insert(trade.num1);
-                }
+            if (symbol_[0] == '6') {
+                // 上海市场成交只存在一方在订单簿, 所以处理后不需要加入等待列表
+                onTrade(trade);
+                return;
             } else {
-                if (sell_order_done_ids_.find(trade.num1) != sell_order_done_ids_.end()) {
-                    // 已处理过该卖单对应的成交编号，避免重复处理
-                    return;
+                // 深圳市场双方都有可能存在于订单簿, 处理一方后还需要等待另一方到达
+                if (is_exist_buy) {
+                    if (buy_order_done_ids_.find(trade.num1) != buy_order_done_ids_.end()) {
+                        // 已处理过该买单对应的成交编号，避免重复处理
+                        pending_events_.push_back(event);
+                        return;
+                    } else {
+                        onTrade(trade);
+                        pending_events_.push_back(event);
+                        buy_order_done_ids_.insert(trade.num1);
+                    }
                 } else {
-                    sell_order_done_ids_.insert(trade.num1);
+                    if (sell_order_done_ids_.find(trade.num1) != sell_order_done_ids_.end()) {
+                        // 已处理过该卖单对应的成交编号，避免重复处理
+                        pending_events_.push_back(event);
+                        return;
+                    } else {
+                        onTrade(trade);
+                        pending_events_.push_back(event);
+                        sell_order_done_ids_.insert(trade.num1);
+                    }
                 }
             }
-
-            onTrade(trade);
-            pending_events_.push_back(event);
-            
-            // LOG_INFO(module_name, "最新时间:{}", last_event_timestamp_);
         } else {
             // 双方订单都不存在于订单簿中, 可能是乱序, 加入等待队列
             if (trade.timestamp + EVENT_TIMEOUT_MS < last_event_timestamp_) {
                 // 长时间未找到订单，丢弃该成交请求
-                // LOG_INFO(module_name, "[{}] 双方订单均不存在于订单簿中且超时丢弃,买方ID:{}, 卖方ID:{}", symbol_, trade.buy_id, trade.sell_id);
                 buy_order_done_ids_.erase(trade.num1);
                 sell_order_done_ids_.erase(trade.num1);
+
                 return;
             } else {
                 pending_events_.push_back(event);
@@ -540,6 +545,17 @@ void OrderBook::printOrderBook(int level_num) const {
         total_ask_list_size += order_list.size();
     }
 
+
+    // if (last_event_timestamp_ > 53999000) {
+    //     for (auto it = asks_.begin(); it != asks_.end(); ++it) {
+    //         for (const auto& order_ref : it->second) {
+    //             LOG_INFO(module_name, "卖盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
+    //                 order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
+    //         }
+    //     }
+    // }
+
+
     LOG_INFO(module_name, "买盘价格订单总数量 {}", total_bid_list_size);
     LOG_INFO(module_name, "卖盘价格订单总数量 {}", total_ask_list_size);
 
@@ -550,6 +566,7 @@ void OrderBook::printOrderBook(int level_num) const {
     LOG_INFO(module_name, "订单索引大小: {}", order_index_.size());
     LOG_INFO(module_name, "买盘档位数量: {}", bids_.size());
     LOG_INFO(module_name, "卖盘档位数量: {}", asks_.size());
+    LOG_INFO(module_name, "历史涨停封单比例数量: {}", limit_up_fengdan_ratios_.size());
     LOG_INFO(module_name, "=========================================");
 }
 
@@ -561,7 +578,7 @@ void OrderBook::printloop(int level_num) {
             printOrderBook(level_num);
         }
         
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // 每1秒打印一次
+        std::this_thread::sleep_for(std::chrono::seconds(1)); // 每3秒打印一次
     }
 }
 
@@ -604,8 +621,8 @@ void OrderBook::checkLimitUpWithdrawal() {
         return;
     }
 
-    // 买一金额 < 500万, 不考虑涨停撤单判断
-    const long long THRESHOLD = 50000000000LL; // 500万 * 10000
+    // 买一金额 < 2000万, 不考虑涨停撤单判断
+    const long long THRESHOLD = 200000000000LL; // 2000万 * 10000
     if (static_cast<long long>(best_bid_volume) * best_bid_price < THRESHOLD) {
         return; 
     }
@@ -631,19 +648,14 @@ void OrderBook::checkLimitUpWithdrawal() {
         return; // 若发生更新, 肯定是买盘增加了, 直接返回
     }
 
-    // 记录封单比例的时间窗口
+    // 更新封单比例的时间窗口
     int old_event_timestamp = last_event_timestamp_ - 5000;
-
-    auto it = limit_up_fengdan_ratios_.begin();
-    while (it != limit_up_fengdan_ratios_.end() && it->first < old_event_timestamp) {
-        double ratio = it->second;
-
-        // 同步清除超时的封单比例记录
-        auto it_set = fengdan_ratio_set_.find(ratio);
-        if (it_set != fengdan_ratio_set_.end()) {
-            fengdan_ratio_set_.erase(it_set);
+    for (auto it = limit_up_fengdan_ratios_.begin(); it != limit_up_fengdan_ratios_.end(); ++it) {
+        if (it->first > old_event_timestamp) {
+            break;
         }
-        it = limit_up_fengdan_ratios_.erase(it);
+
+        limit_up_fengdan_ratios_.erase(it);
     }
 
     // 计算当前封单比例
@@ -651,13 +663,17 @@ void OrderBook::checkLimitUpWithdrawal() {
     
     // 计算时间窗口内封单比例变化
     double ratio_change = 0.0;
-    if (!fengdan_ratio_set_.empty()) {
-        double max_ratio = *fengdan_ratio_set_.rbegin();
-        ratio_change = max_ratio - current_ratio;
+    double max_ratio_in_window = 0.0;
+    if (!limit_up_fengdan_ratios_.empty()) {
+        for (const auto& [timestamp, ratio] : limit_up_fengdan_ratios_) {
+            if (ratio > max_ratio_in_window) {
+                max_ratio_in_window = ratio;
+            }
+        }
+        ratio_change = max_ratio_in_window - current_ratio;
     }
 
     // 记录当前封单比例
-    fengdan_ratio_set_.insert(current_ratio);
     limit_up_fengdan_ratios_[last_event_timestamp_] = current_ratio;
     
     // 撤单策略1
@@ -673,8 +689,8 @@ void OrderBook::checkLimitUpWithdrawal() {
                 // is_send_ = true;
             }
 
-            LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下降超过20%。", 
-                symbol_, current_ratio, fengdan_volume, max_bid_volume_);
+            LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
+                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, last_event_timestamp_);
         }
     };
 

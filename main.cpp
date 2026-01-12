@@ -38,6 +38,17 @@ int main() {
         auto orderBooksPtr = std::make_shared<std::unordered_map<std::string, std::unique_ptr<OrderBook>>>();
         auto stockWithAccountsPtr = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
 
+        // 初始化交易信号发送服务器
+        auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
+
+
+        std::string symbol = "002697.SZ";
+        (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+            symbol, 
+            sendServerPtr,
+            stockWithAccountsPtr
+        );
+
         // // 初始化行情服务器连接
         // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
         // L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
@@ -46,9 +57,10 @@ int main() {
         // OrderSubscriber.connect();
         // TradeSubscriber.connect(); 
 
+        // OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
+        // TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
 
-        // 初始化交易信号发送服务器
-        auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
+
         // while (true){
         //     sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
         //     Sleep(1);
@@ -57,14 +69,8 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        std::string symbol = "600895.SH";
-
-        
-        (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
-            symbol, 
-            sendServerPtr,
-            stockWithAccountsPtr
-        );
+        //延迟5s
+        // std::this_thread::sleep_for(std::chrono::seconds(5));
 
         {
             L2HttpDownloader downloader(
@@ -74,15 +80,14 @@ int main() {
                 orderBooksPtr
             );
 
-            //downloader.login();
+            downloader.login();
             downloader.download_and_parse(symbol, "Order");
             downloader.download_and_parse(symbol, "Tran");
         }
         
         
 
-        // OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
-        // TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
+
             
         // // 前端消息接收服务器回调函数
         // auto handleMessage = [
