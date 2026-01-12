@@ -69,10 +69,10 @@ bool OrderBook::isHistoryDataLoadingComplete() const {
 void OrderBook::generateDuplicateSets() {
     // 生成历史数据去重集合
 
-    LOG_INFO(module_name, "history_order_timeId__ size: {}", history_order_timeId_.size());
     for (auto it = history_order_timeId_.begin(); it != history_order_timeId_.end(); ++it) {
         if (last_event_timestamp_ - it->second <= 600000) {
             // 记录一分钟内的历史数据ID
+            LOG_INFO(module_name, "加入历史去重ID: {}", it->first); 
             history_order_id_.insert(it->first);
         }
     }
@@ -96,7 +96,7 @@ void OrderBook::runProcessingLoop() {
 
     int process_pending_events_count = 0;
 
-    const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 1 笔事件处理一次待处理事件
+    const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
 
     while (running_) {
         if (isHistoryDataLoadingComplete() == false ||

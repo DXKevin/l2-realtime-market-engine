@@ -42,7 +42,7 @@ int main() {
         auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
 
 
-        std::string symbol = "002697.SZ";
+        std::string symbol = "600895.SH";
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 
             sendServerPtr,
