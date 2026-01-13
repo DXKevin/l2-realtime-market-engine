@@ -41,13 +41,70 @@ int main() {
         // 初始化交易信号发送服务器
         auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
 
-
-        std::string symbol = "600895.SH";
-        (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
-            symbol, 
-            sendServerPtr,
-            stockWithAccountsPtr
+        // 初始化HTTP下载器
+        L2HttpDownloader downloader(
+            http_url,
+            username,
+            password,
+            orderBooksPtr
         );
+
+        downloader.login();
+
+        // 初始化行情服务器连接
+        L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
+        L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
+
+        // 登录行情服务器
+        OrderSubscriber.connect();
+        TradeSubscriber.connect(); 
+
+        // 前端消息接收服务器回调函数
+        auto handleMessage = [
+            stockWithAccountsPtr,
+            orderBooksPtr,
+            sendServerPtr,
+            &OrderSubscriber,
+            &TradeSubscriber,
+            &downloader
+        ] (const std::string& message) {
+            std::string symbol = parseAndStoreStockAccount(message, stockWithAccountsPtr);
+            
+            if (symbol.empty()) {
+                LOG_WARN(module_name, "从前端消息解析出股票代码为空: {}", message);
+                return;
+            }
+
+            if (orderBooksPtr->find(symbol) != orderBooksPtr->end()) {
+                LOG_INFO(module_name, "股票代码 {} 的 OrderBook 已存在，跳过创建新实例", symbol);
+                return;
+            }
+
+            (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+                symbol, 
+                sendServerPtr,
+                stockWithAccountsPtr
+            );
+
+            OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
+            TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
+
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            
+            // 下载历史数据
+            downloader.download_and_parse(symbol, "Order"); 
+            downloader.download_and_parse(symbol, "Tran");
+        };
+
+        // 初始化接收前端消息服务器
+        ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
+
+        // std::string symbol = "300785.SZ";
+        // (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+        //     symbol, 
+        //     sendServerPtr,
+        //     stockWithAccountsPtr
+        // );
 
         // // 初始化行情服务器连接
         // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
@@ -69,21 +126,24 @@ int main() {
         // Sleep(5000); // 等待管道服务器启动完成
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
-        //延迟5s
-        // std::this_thread::sleep_for(std::chrono::seconds(5));
+        // 延迟5s
+        // std::this_thread::sleep_for(std::chrono::seconds(10));
 
-        {
-            L2HttpDownloader downloader(
-                http_url,
-                username,
-                password,
-                orderBooksPtr
-            );
+        // downloader.download_and_parse(symbol, "Order");
+        // downloader.download_and_parse(symbol, "Tran");
 
-            downloader.login();
-            downloader.download_and_parse(symbol, "Order");
-            downloader.download_and_parse(symbol, "Tran");
-        }
+        // {
+        //     L2HttpDownloader downloader(
+        //         http_url,
+        //         username,
+        //         password,
+        //         orderBooksPtr
+        //     );
+
+        //     downloader.login();
+        //     downloader.download_and_parse(symbol, "Order");
+        //     downloader.download_and_parse(symbol, "Tran");
+        // }
         
         
 

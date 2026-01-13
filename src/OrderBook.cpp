@@ -72,7 +72,6 @@ void OrderBook::generateDuplicateSets() {
     for (auto it = history_order_timeId_.begin(); it != history_order_timeId_.end(); ++it) {
         if (last_event_timestamp_ - it->second <= 600000) {
             // 记录一分钟内的历史数据ID
-            LOG_INFO(module_name, "加入历史去重ID: {}", it->first); 
             history_order_id_.insert(it->first);
         }
     }
@@ -119,6 +118,7 @@ void OrderBook::runProcessingLoop() {
 
             if (!running_) break;
 
+            int timestamp = 0;
             if (hist_evt.type == MarketEvent::EventType::ORDER) {
                 handleOrderEvent(hist_evt);
 
@@ -126,6 +126,8 @@ void OrderBook::runProcessingLoop() {
                 history_order_timeId_.push_back(
                     {std::get<L2Order>(hist_evt.data).num1, std::get<L2Order>(hist_evt.data).timestamp}
                 );
+
+                timestamp = std::get<L2Order>(hist_evt.data).timestamp;
             } else if (hist_evt.type == MarketEvent::EventType::TRADE) {
                 handleTradeEvent(hist_evt);
 
@@ -133,16 +135,16 @@ void OrderBook::runProcessingLoop() {
                 history_trade_timeId_.push_back(
                     {std::get<L2Trade>(hist_evt.data).num1, std::get<L2Trade>(hist_evt.data).timestamp}
                 );
+
+                timestamp = std::get<L2Trade>(hist_evt.data).timestamp;
             }
-            
+
             // 定期处理待处理事件
             ++process_pending_events_count;
             if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
                 processPendingEvents();
                 process_pending_events_count = 0;
             }
-
-
         } else {
             // 处理实时事件队列
             MarketEvent evt;
@@ -152,15 +154,17 @@ void OrderBook::runProcessingLoop() {
 
             if (!running_) break;
 
+            int timestamp = 0;
             if (evt.type == MarketEvent::EventType::ORDER) {
                 handleOrderEvent(evt);
-
+                timestamp = std::get<L2Order>(evt.data).timestamp;
             } else if (evt.type == MarketEvent::EventType::TRADE) {
                 handleTradeEvent(evt);
+                timestamp = std::get<L2Trade>(evt.data).timestamp;
             }
 
             // 检查涨停撤单
-            checkLimitUpWithdrawal();
+            checkLimitUpWithdrawal(timestamp);
 
             // 定期处理待处理事件
             ++process_pending_events_count;
@@ -186,7 +190,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
     if (order.timestamp > last_event_timestamp_) {
         last_event_timestamp_ = order.timestamp;
     }
-
+    
     if (order.symbol[0] == '6'){
         // 上海逐笔委托处理逻辑
         // 上海逐笔委托 --> 限价2 --> 可以入队
@@ -322,7 +326,6 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
                 // 长时间未找到订单，丢弃该成交请求
                 buy_order_done_ids_.erase(trade.num1);
                 sell_order_done_ids_.erase(trade.num1);
-
                 return;
             } else {
                 pending_events_.push_back(event);
@@ -577,13 +580,12 @@ void OrderBook::printloop(int level_num) {
             std::lock_guard<std::mutex> lock(mtx_);
             printOrderBook(level_num);
         }
-        
         std::this_thread::sleep_for(std::chrono::seconds(1)); // 每3秒打印一次
     }
 }
 
 // 检查涨停撤单情况
-void OrderBook::checkLimitUpWithdrawal() {
+void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     if (is_send_){
         return; // 已经发送过警告, 不再重复发送
     }
@@ -674,8 +676,8 @@ void OrderBook::checkLimitUpWithdrawal() {
     }
 
     // 记录当前封单比例
-    limit_up_fengdan_ratios_[last_event_timestamp_] = current_ratio;
-    
+    limit_up_fengdan_ratios_[timestamp] = current_ratio;
+
     // 撤单策略1
     auto s1 = [&](){
         if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.2) {
@@ -686,7 +688,7 @@ void OrderBook::checkLimitUpWithdrawal() {
                     symbol_, 
                     stock_with_accounts_
                 ));
-                // is_send_ = true;
+                is_send_ = true;
             }
 
             LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 

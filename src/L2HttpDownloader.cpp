@@ -160,25 +160,37 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
         if (type == "Order") {
             if  (fields.size() == ORDER_FIELDS) {
                 std::vector<std::string_view> relevant_fields = {
-                    fields[0], fields[1], fields[4], fields[5], fields[6], fields[7],
-                    fields[8], fields[9], fields[10], fields[11], fields[12]
+                    fields[0], fields[1], fields[2], fields[3], fields[4], fields[5],
+                    fields[6], fields[7], fields[8], fields[9], fields[10], fields[11], fields[12]
                 };
                 
                 MarketEvent event = MarketEvent(L2Order(relevant_fields));
+
+                const auto& order = std::get<L2Order>(event.data);
                 it->second->pushHistoryEvent(event);
+
+                // if (order.timestamp < 34080000) {
+                //     it->second->pushHistoryEvent(event);
+                // }
             } else {
                 LOG_WARN("L2HttpDownloader", "order字段数不匹配, data:{} --> size:{}", line, fields.size());
             }
         } else if (type == "Tran") {
             if (fields.size() == TRADE_FIELDS) {
                 std::vector<std::string_view> relevant_fields = {
-                    fields[0], fields[1], fields[4], fields[5], fields[6], fields[7],
-                    fields[8], fields[9], fields[10], fields[11], fields[12], fields[13]
+                    fields[0], fields[1], fields[2], fields[3], fields[4], fields[5],
+                    fields[6], fields[7], fields[8], fields[9], fields[10], 
+                    fields[11], fields[12], fields[13]
                 };
 
                 MarketEvent event = MarketEvent(L2Trade(relevant_fields));
+
+                const auto& trade = std::get<L2Trade>(event.data);
                 it->second->pushHistoryEvent(event);
 
+                // if (trade.timestamp < 34080000) {
+                //     it->second->pushHistoryEvent(event);
+                // }
             } else {
                 LOG_WARN("L2HttpDownloader", "trade字段数不匹配, data:{} --> size:{}", line, fields.size());
             }

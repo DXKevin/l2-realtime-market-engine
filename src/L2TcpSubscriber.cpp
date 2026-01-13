@@ -208,7 +208,7 @@ void L2TcpSubscriber::receiveLoop() {
             continue; // 登录或订阅成功或心跳包，跳过处理
         }
 
-        //LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
+        // LOG_INFO(module_name, "接收到数据 <{}:{}> : {}", host_, port_, data);
 
         auto events = parseL2Data(data, type_, buffer_);
         

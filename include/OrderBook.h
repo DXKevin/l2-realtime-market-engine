@@ -47,7 +47,7 @@ private:
     void printOrderBook(int level_num) const;
     void printloop(int level_num);
 
-    void checkLimitUpWithdrawal();
+    void checkLimitUpWithdrawal(int timestamp);
 
     // 订单簿相关数据结构
     struct OrderRef {
