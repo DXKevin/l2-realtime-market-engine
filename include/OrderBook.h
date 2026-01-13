@@ -62,7 +62,10 @@ private:
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
-    int EVENT_TIMEOUT_MS = 60000000; // 事件处理超时阈值，单位毫秒
+    int EVENT_TIMEOUT_MS = 120000; // 事件处理超时阈值，单位毫秒
+
+    // 历史事件排序缓冲区
+    std::vector<MarketEvent> history_event_buffer_;
 
     // 历史数据去重集合
     std::vector<std::pair<int, int>> history_order_timeId_;
@@ -101,6 +104,7 @@ private:
     std::atomic<bool> running_{true};
     std::atomic<bool> is_send_{false};
     std::atomic<bool> is_history_event_queue_done_{false};
+    std::atomic<bool> is_history_event_buffer_done_{false};
     
     
     // 锁

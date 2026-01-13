@@ -78,14 +78,14 @@ void L2HttpDownloader::start_download_async(const std::string& symbol, const std
 }
 
 void L2HttpDownloader::download_and_parse(const std::string& symbol, const std::string& type) {
-    std::string result = download(symbol, type);
+    // std::string result = download(symbol, type);
 
-    // std::string result = "";
-    // if (type == "Order") { 
-    //     result = readCsvFile("data/20260109_Order_600895.SH.csv");
-    // } else if (type == "Tran") {
-    //     result = readCsvFile("data/20260109_Tran_600895.SH.csv");
-    // }
+    std::string result = "";
+    if (type == "Order") { 
+        result = readCsvFile("data/20260106_Order_000592.SZ.csv");
+    } else if (type == "Tran") {
+        result = readCsvFile("data/20260106_Tran_000592.SZ.csv");
+    }
 
     parse_data(symbol, type, result);
 }

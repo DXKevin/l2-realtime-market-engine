@@ -95,56 +95,84 @@ void OrderBook::runProcessingLoop() {
 
     int process_pending_events_count = 0;
 
-    const int PROCESS_PENDING_EVENTS_INTERVAL = 10; // 每处理 10 笔事件处理一次待处理事件
+    int PROCESS_PENDING_EVENTS_INTERVAL = 100; // 每处理 100 笔事件处理一次待处理事件
 
     while (running_) {
         if (isHistoryDataLoadingComplete() == false ||
-            is_history_event_queue_done_.load() == false
+            is_history_event_queue_done_.load() == false ||
+            is_history_event_buffer_done_.load() == false
         ) {
-            // 先处理历史事件队列
             MarketEvent hist_evt;
-            if (!history_event_queue.wait_dequeue_timed(hist_evt, std::chrono::milliseconds(3000))) {
+            if (!history_event_queue.wait_dequeue_timed(hist_evt, std::chrono::milliseconds(3000)) &&
+             is_history_event_queue_done_.load() == false) {
                 if (isHistoryDataLoadingComplete()) {
-                    // 历史数据处理完成, 生成去重集合
-                    generateDuplicateSets();
+                    // 历史数据接受完毕，对订单进行事件排序
+                    LOG_INFO(module_name, "历史数据接收完毕，开始对历史事件进行排序...");
+                    std::sort(history_event_buffer_.begin(), history_event_buffer_.end(), [](const MarketEvent& a, const MarketEvent& b) {
+                        int timestamp_a = (a.type == MarketEvent::EventType::ORDER) ? std::get<L2Order>(a.data).timestamp : std::get<L2Trade>(a.data).timestamp;
+                        int timestamp_b = (b.type == MarketEvent::EventType::ORDER) ? std::get<L2Order>(b.data).timestamp : std::get<L2Trade>(b.data).timestamp;
+                        return timestamp_a < timestamp_b;
+                    });
+
                     is_history_event_queue_done_.store(true);
-                    
-                    EVENT_TIMEOUT_MS = 60000; // 将事件处理超时阈值设为1分钟
                 }
                 continue;
             }
+
+            // 在历史事件队列处理完毕后才进入下一步
+            if (is_history_event_queue_done_.load() == false) {
+                history_event_buffer_.push_back(hist_evt);
+                continue;
+            }
+                
+            // 开始进行撮合
+            for (auto it = history_event_buffer_.begin(); it != history_event_buffer_.end(); ++it) {
+                std::lock_guard<std::mutex> lock(mtx_);
+
+                if (!running_) break;
+
+                int timestamp = 0;
+                if (it->type == MarketEvent::EventType::ORDER) {
+                    handleOrderEvent(*it);
+
+                    // 记录历史数据ID与时间戳映射
+                    history_order_timeId_.push_back(
+                        {std::get<L2Order>(it->data).num1, std::get<L2Order>(it->data).timestamp}
+                    );
+
+                    timestamp = std::get<L2Order>(it->data).timestamp;
+                } else if (it->type == MarketEvent::EventType::TRADE) {
+                    handleTradeEvent(*it);
+
+                    // 记录历史数据ID与时间戳映射
+                    history_trade_timeId_.push_back(
+                        {std::get<L2Trade>(it->data).num1, std::get<L2Trade>(it->data).timestamp}
+                    );
+
+                    timestamp = std::get<L2Trade>(it->data).timestamp;
+                }
+
+                // checkLimitUpWithdrawal(timestamp);
+
+                // 定期处理待处理事件
+                ++process_pending_events_count;
+                if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
+                    processPendingEvents();
+                    process_pending_events_count = 0;
+                }
+            }
+            std::vector<MarketEvent>().swap(history_event_buffer_);
+
+            processPendingEvents();
             
-            std::lock_guard<std::mutex> lock(mtx_);
+            EVENT_TIMEOUT_MS = 60000;
+            PROCESS_PENDING_EVENTS_INTERVAL = 10;
+            is_history_event_buffer_done_.store(true);
+            generateDuplicateSets();
 
-            if (!running_) break;
+            LOG_INFO(module_name, "历史事件处理完毕，开始处理实时事件队列...");
+            
 
-            int timestamp = 0;
-            if (hist_evt.type == MarketEvent::EventType::ORDER) {
-                handleOrderEvent(hist_evt);
-
-                // 记录历史数据时间戳与ID映射
-                history_order_timeId_.push_back(
-                    {std::get<L2Order>(hist_evt.data).num1, std::get<L2Order>(hist_evt.data).timestamp}
-                );
-
-                timestamp = std::get<L2Order>(hist_evt.data).timestamp;
-            } else if (hist_evt.type == MarketEvent::EventType::TRADE) {
-                handleTradeEvent(hist_evt);
-
-                // 记录历史数据时间戳与ID映射
-                history_trade_timeId_.push_back(
-                    {std::get<L2Trade>(hist_evt.data).num1, std::get<L2Trade>(hist_evt.data).timestamp}
-                );
-
-                timestamp = std::get<L2Trade>(hist_evt.data).timestamp;
-            }
-
-            // 定期处理待处理事件
-            ++process_pending_events_count;
-            if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
-                processPendingEvents();
-                process_pending_events_count = 0;
-            }
         } else {
             // 处理实时事件队列
             MarketEvent evt;
@@ -281,43 +309,33 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
         bool is_exist_buy = isOrderExists(trade.buy_id);
         bool is_exist_sell = isOrderExists(trade.sell_id);
 
-
         if (is_exist_buy && is_exist_sell) {
             // 成交双方的订单都存在于订单簿中, 直接处理成交
             onTrade(trade);
-
-            // LOG_INFO(module_name, "[{}] 双方订单均存在于订单簿中,买方ID:{}, 卖方ID:{}", symbol_, trade.buy_id, trade.sell_id);
         } else if ((is_exist_buy || is_exist_sell)) {
             // 成交双方只有一方存在于订单簿中
             // 另一方订单不存在存在三种情况
             // 1、市价单, 2、乱序到达, 3、临时启动程序无原始盘口, 
             // 优先处理存在的一方并加入等待队列, 等待另一方订单到达
-            if (symbol_[0] == '6') {
-                // 上海市场成交只存在一方在订单簿, 所以处理后不需要加入等待列表
-                onTrade(trade);
-                return;
-            } else {
-                // 深圳市场双方都有可能存在于订单簿, 处理一方后还需要等待另一方到达
-                if (is_exist_buy) {
-                    if (buy_order_done_ids_.find(trade.num1) != buy_order_done_ids_.end()) {
-                        // 已处理过该买单对应的成交编号，避免重复处理
-                        pending_events_.push_back(event);
-                        return;
-                    } else {
-                        onTrade(trade);
-                        pending_events_.push_back(event);
-                        buy_order_done_ids_.insert(trade.num1);
-                    }
+            if (is_exist_buy) {
+                if (buy_order_done_ids_.find(trade.num1) != buy_order_done_ids_.end()) {
+                    // 已处理过该买单对应的成交编号，避免重复处理
+                    pending_events_.push_back(event);
+                    return;
                 } else {
-                    if (sell_order_done_ids_.find(trade.num1) != sell_order_done_ids_.end()) {
-                        // 已处理过该卖单对应的成交编号，避免重复处理
-                        pending_events_.push_back(event);
-                        return;
-                    } else {
-                        onTrade(trade);
-                        pending_events_.push_back(event);
-                        sell_order_done_ids_.insert(trade.num1);
-                    }
+                    onTrade(trade);
+                    pending_events_.push_back(event);
+                    buy_order_done_ids_.insert(trade.num1);
+                }
+            } else {
+                if (sell_order_done_ids_.find(trade.num1) != sell_order_done_ids_.end()) {
+                    // 已处理过该卖单对应的成交编号，避免重复处理
+                    pending_events_.push_back(event);
+                    return;
+                } else {
+                    onTrade(trade);
+                    pending_events_.push_back(event);
+                    sell_order_done_ids_.insert(trade.num1);
                 }
             }
         } else {
@@ -339,7 +357,7 @@ void OrderBook::processPendingEvents() {
     // const size_t max_process = 10000; // 每次最多处理5个待处理事件
     const size_t max_process = pending_events_.size(); // 每次处理所有待处理事件
     size_t processed_index = 0;
-    
+
     while (processed_index < max_process && !pending_events_.empty()) {
         MarketEvent event = std::move(pending_events_.front());
         pending_events_.pop_front();
@@ -384,12 +402,14 @@ void OrderBook::onTrade(const L2Trade& trade) {
         int price = index_it->second->price;
         int side = index_it->second->side;
         
-        if (symbol_[0] == '6' && trade.side == side) {
-            // 上海市场买卖方向与成交方向相同的订单不处理封单量, 因为主动成交的一方委托量不会出现在订单簿中
-            // if (id == "24529530") {
-            //     LOG_INFO(module_name, "主动成交订单ID: {}，价格: {}, 方向: {}", id, price, side);
-            // }
-            return; 
+        if (symbol_[0] == '6') {
+            if (trade.side == side) {
+                // 上海市场买卖方向与成交方向相同的订单不处理封单量, 因为主动成交的一方委托量不会出现在订单簿中
+                // if (id == "24529530") {
+                //     LOG_INFO(module_name, "主动成交订单ID: {}，价格: {}, 方向: {}", id, price, side);
+                // }
+                return; 
+            }
         } 
 
         // 更新订单簿
@@ -550,9 +570,9 @@ void OrderBook::printOrderBook(int level_num) const {
 
 
     // if (last_event_timestamp_ > 53999000) {
-    //     for (auto it = asks_.begin(); it != asks_.end(); ++it) {
+    //     for (auto it = bids_.rbegin(); it != bids_.rend(); ++it) {
     //         for (const auto& order_ref : it->second) {
-    //             LOG_INFO(module_name, "卖盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
+    //             LOG_INFO(module_name, "买盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
     //                 order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
     //         }
     //     }

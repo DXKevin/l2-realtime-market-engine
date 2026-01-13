@@ -49,15 +49,15 @@ int main() {
             orderBooksPtr
         );
 
-        downloader.login();
+        // downloader.login();
 
         // 初始化行情服务器连接
         L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
         L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
 
         // 登录行情服务器
-        OrderSubscriber.connect();
-        TradeSubscriber.connect(); 
+        // OrderSubscriber.connect();
+        // TradeSubscriber.connect(); 
 
         // 前端消息接收服务器回调函数
         auto handleMessage = [
@@ -99,12 +99,12 @@ int main() {
         // 初始化接收前端消息服务器
         ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
 
-        // std::string symbol = "300785.SZ";
-        // (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
-        //     symbol, 
-        //     sendServerPtr,
-        //     stockWithAccountsPtr
-        // );
+        std::string symbol = "000592.SZ";
+        (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+            symbol, 
+            sendServerPtr,
+            stockWithAccountsPtr
+        );
 
         // // 初始化行情服务器连接
         // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
@@ -129,8 +129,8 @@ int main() {
         // 延迟5s
         // std::this_thread::sleep_for(std::chrono::seconds(10));
 
-        // downloader.download_and_parse(symbol, "Order");
-        // downloader.download_and_parse(symbol, "Tran");
+        downloader.download_and_parse(symbol, "Order");
+        downloader.download_and_parse(symbol, "Tran");
 
         // {
         //     L2HttpDownloader downloader(
