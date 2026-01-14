@@ -3,9 +3,7 @@
 #include <functional>
 #include <thread>
 #include <atomic>
-#include <windows.h>
 
-#include "Logger.h"
 
 class ReceiveServer {
 public:

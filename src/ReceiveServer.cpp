@@ -1,5 +1,8 @@
 #include "ReceiveServer.h"
-#include <iostream>
+#include "Logger.h"
+
+#include <windows.h>
+
 
 ReceiveServer::ReceiveServer(const std::string& pipe_name, MessageHandler handler)
     : full_pipe_name_("\\\\.\\pipe\\" + pipe_name), on_message_(handler) {

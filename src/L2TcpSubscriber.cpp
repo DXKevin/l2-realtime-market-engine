@@ -1,8 +1,6 @@
 // L2TcpSubscriber.cpp
 #include <iostream>
-#include <sstream>
 #include <cassert>
-#include <variant>
 
 #include "L2TcpSubscriber.h"
 #include "Logger.h"

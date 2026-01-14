@@ -4,8 +4,6 @@
 #include <atomic>
 #include <windows.h>
 
-#include "Logger.h"
-
 class SendServer {
 public:
     explicit SendServer(

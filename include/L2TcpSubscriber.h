@@ -2,7 +2,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <thread>
 #include <atomic>
 #include <unordered_map>

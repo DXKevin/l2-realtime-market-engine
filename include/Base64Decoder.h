@@ -1,9 +1,7 @@
 #pragma once
-
 #include <string>
 #include <vector>
 #include <zlib/zlib.h>
-
 #include "Logger.h"
 
 inline std::vector<unsigned char> base64_decode(const std::string& input) {
@@ -52,7 +50,7 @@ inline std::vector<unsigned char> gzip_decompress(const std::vector<unsigned cha
         ret = inflate(&strm, Z_NO_FLUSH);
         if (ret != Z_OK && ret != Z_STREAM_END) {
             inflateEnd(&strm);
-            LOG_ERROR("Base64Decoder", "gzip decompression failed with error code: {}", ret);
+            LOG_WARN("Base64Decoder", "gzip decompression failed with error code: {}", ret);
         }
         size_t have = outbuffer.size() - strm.avail_out;
         result.insert(result.end(), outbuffer.begin(), outbuffer.begin() + have);

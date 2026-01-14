@@ -5,7 +5,7 @@
 
 #include "Logger.h"
 
-std::string readCsvFile(const std::string& filePath) {
+inline std::string readCsvFile(const std::string& filePath) {
     std::ifstream file(filePath);
 
     if (!file.is_open()) {

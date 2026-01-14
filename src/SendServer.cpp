@@ -1,6 +1,7 @@
 #include "SendServer.h"
 #include "Logger.h"
 
+#include <windows.h>
 
 
 SendServer::SendServer(const std::string& pipe_name)
