@@ -6,8 +6,6 @@
 #include <atomic>
 #include <unordered_map>
 #include <deque>
-#include <set>
-#include <functional>
 #include <unordered_set>
 
 #include "concurrentqueue/blockingconcurrentqueue.h"
@@ -39,9 +37,11 @@ private:
     void handleTradeEvent(const MarketEvent& event);
     void processPendingEvents();
 
+    bool isBuyOrderDone(const int num1) const;
+    bool isSellOrderDone(const int num1) const;
     bool isOrderExists(const int order_id) const;
     void addOrder(const L2Order& order);
-    void onTrade(const L2Trade& trade);
+    void onTrade(const int order_id, const int trade_volume, const int trade_side);
     void onCancelOrder(const int order_id, const int cancel_volume);
     void removeOrder(const int order_id);
     void printOrderBook(int level_num) const;
@@ -62,7 +62,7 @@ private:
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
-    int EVENT_TIMEOUT_MS = 120000; // 事件处理超时阈值，单位毫秒
+    int EVENT_TIMEOUT_MS = 30000; // 事件处理超时阈值，单位毫秒
 
     // 历史事件排序缓冲区
     std::vector<MarketEvent> history_event_buffer_;
@@ -105,7 +105,6 @@ private:
     std::atomic<bool> is_send_{false};
     std::atomic<bool> is_history_event_queue_done_{false};
     std::atomic<bool> is_history_event_buffer_done_{false};
-    
     
     // 锁
     mutable std::mutex mtx_;

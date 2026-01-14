@@ -49,7 +49,7 @@ int main() {
             orderBooksPtr
         );
 
-        // downloader.login();
+        downloader.login();
 
         // 初始化行情服务器连接
         L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
@@ -99,7 +99,7 @@ int main() {
         // 初始化接收前端消息服务器
         ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
 
-        std::string symbol = "000592.SZ";
+        std::string symbol = "605255.SH";
         (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
             symbol, 
             sendServerPtr,

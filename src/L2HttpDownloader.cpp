@@ -1,8 +1,8 @@
 #include "L2HttpDownloader.h"
+#include "L2Parser.h"
 #include "nlohmann/json.hpp"
 #include "Logger.h"
 #include "Base64Decoder.h"
-#include "L2Parser.h"
 #include "ReadFile.h"
 
 
@@ -78,14 +78,14 @@ void L2HttpDownloader::start_download_async(const std::string& symbol, const std
 }
 
 void L2HttpDownloader::download_and_parse(const std::string& symbol, const std::string& type) {
-    // std::string result = download(symbol, type);
+    std::string result = download(symbol, type);
 
-    std::string result = "";
-    if (type == "Order") { 
-        result = readCsvFile("data/20260106_Order_000592.SZ.csv");
-    } else if (type == "Tran") {
-        result = readCsvFile("data/20260106_Tran_000592.SZ.csv");
-    }
+    // std::string result = "";
+    // if (type == "Order") { 
+    //     result = readCsvFile("data/20260114_Order_002195.SZ.csv");
+    // } else if (type == "Tran") {
+    //     result = readCsvFile("data/20260114_Tran_002195.SZ.csv");
+    // }
 
     parse_data(symbol, type, result);
 }
@@ -110,11 +110,18 @@ std::string L2HttpDownloader::download(const std::string& symbol, const std::str
 
     nlohmann::json res_json = nlohmann::json::parse(res->body);
     if (res_json["Code"] != 200) {
-
+        
         int error_code = res_json["Code"];
         LOG_ERROR("L2HttpDownloader", "下载数据失败，服务器返回错误代码: {}", error_code);
         return "";
     }
+
+    if (res_json["Data"]["code"] == -1) {
+        std::string msg = res_json["Data"]["msg"];
+        LOG_ERROR("L2HttpDownloader", "下载数据失败，服务器返回错误消息: {}", msg);
+        return "";
+    }
+
 
     // 提取并解压gzip数据
     std::string data = res_json["Data"]["data"];
@@ -169,7 +176,7 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                 const auto& order = std::get<L2Order>(event.data);
                 it->second->pushHistoryEvent(event);
 
-                // if (order.timestamp < 34080000) {
+                // if (order.timestamp < 42000000) {
                 //     it->second->pushHistoryEvent(event);
                 // }
             } else {
@@ -188,7 +195,7 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                 const auto& trade = std::get<L2Trade>(event.data);
                 it->second->pushHistoryEvent(event);
 
-                // if (trade.timestamp < 34080000) {
+                // if (trade.timestamp < 42000000) {
                 //     it->second->pushHistoryEvent(event);
                 // }
             } else {
