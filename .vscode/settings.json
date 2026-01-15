@@ -1,3 +1,26 @@
 {
-    "C_Cpp.default.compilerPath": "C:/Program Files/mingw64/bin/g++.exe"
+    // === 启用 clangd ===
+    "clangd.enabled": true,
+    "clangd.path": "C:\\Program Files\\LLVM\\bin\\clangd.exe",
+    // === clangd 高性能参数（Windows 优化）===
+    "clangd.arguments": [
+        "--background-index",
+        "--suggest-missing-includes",
+        "--cross-file-rename",
+        "--clang-tidy", // 启用静态分析
+        "--header-insertion=iwyu", // 自动补 include
+        "--pch-storage=memory", // Windows 内存预编译头加速
+        "--limit-references=1000" // 防止大项目卡死
+    ],
+    // === 文件监听优化（Windows 防卡顿）===
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/out/**": true
+    },
+    "cmake.configureArgs": [
+        "-DCMAKE_TOOLCHAIN_FILE=C:/Users/LE/Desktop/vcpkg/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "-DVCPKG_TARGET_TRIPLET=x64-windows"
+    ],
+    "cmake.generator": "Ninja",
+    "cmake.preferredGenerators": ["Ninja"]
 }

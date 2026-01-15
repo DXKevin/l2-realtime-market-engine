@@ -12,7 +12,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)  # .lib 输出也�
 # 源文件
 aux_source_directory(${PROJECT_SOURCE_DIR}/src SRC_LISTS)
 
-
 # 👇 改为 STATIC（静态库）
 add_library(common STATIC ${SRC_LISTS})
 
@@ -23,9 +22,11 @@ target_include_directories(common
 )
 
 if(WIN32)
-    link_directories(${PROJECT_SOURCE_DIR}/third_party/lib)
-    target_link_libraries(common PRIVATE ws2_32 z)
+    target_link_libraries(common PRIVATE ws2_32)
 endif()
+
+find_package(ZLIB REQUIRED)
+target_link_libraries(common PRIVATE ZLIB::ZLIB)
 
 # 主程序
 add_executable(main main.cpp)
