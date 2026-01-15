@@ -40,7 +40,7 @@ void SendServer::runServer() {
             Sleep(5000);
             continue;
         }
-
+        
         LOG_INFO("SendServer", "等待客户端连接到管道: " + full_pipe_name_);
         // 等待客户端（Python）连接
         if (!ConnectNamedPipe(hPipe, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) {

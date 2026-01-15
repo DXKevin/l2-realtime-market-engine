@@ -9,25 +9,15 @@ static const char* module_name = "OrderBook";
 
 OrderBook::OrderBook(
     const std::string symbol, 
-    std::shared_ptr<SendServer> send_server,
-    std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts
+    SendServer& sendServer_ref,
+    std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
 ) : 
-    symbol_(symbol), send_server_(send_server), stock_with_accounts_(stock_with_accounts) {
+    symbol_(symbol), sendServer_ref_(sendServer_ref), stockWithAccounts_ref_(stockWithAccounts_ref) {
 
     if (symbol_.empty()){
         LOG_ERROR(module_name, "OrderBook 无法用空股票代码初始化~");
         return;
     };
-
-    if (send_server_ == nullptr){
-        LOG_ERROR(module_name, "OrderBook 初始化时 SendServer 为空指针~");
-        return;
-    };
-
-    if (stock_with_accounts_ == nullptr){
-        LOG_ERROR(module_name, "OrderBook 初始化时 stock_with_accounts 为空指针~");
-        return;
-    }
 
     processing_thread_ = std::thread(&OrderBook::runProcessingLoop, this);
 }
@@ -588,8 +578,8 @@ void OrderBook::printOrderBook(int level_num) const {
     //     }
     // }
 
-    // if (last_event_timestamp_ >= 41399990) {
-    //     auto it = bids_.find(326100);
+    // if (last_event_timestamp_ >= 41392860) {
+    //     auto it = bids_.find(235500);
     //     if (it != bids_.end()) {
     //         for (const auto& order_ref : it->second) {
     //             LOG_INFO(module_name, "买盘价格档位 {} 订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
@@ -597,7 +587,6 @@ void OrderBook::printOrderBook(int level_num) const {
     //         }
     //     }
     // }
-
 
     LOG_INFO(module_name, "买盘价格订单总数量 {}", total_bid_list_size);
     LOG_INFO(module_name, "卖盘价格订单总数量 {}", total_ask_list_size);
@@ -724,13 +713,11 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.2) {
 
             // 放发生交易请求的部分
-            if (send_server_) {
-                send_server_->send(formatStockAccount(
-                    symbol_, 
-                    stock_with_accounts_
-                ));
-                is_send_ = true;
-            }
+            sendServer_ref_.send(formatStockAccount(
+                symbol_, 
+                stockWithAccounts_ref_
+            ));
+            is_send_ = true;
 
             LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
                 symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp);

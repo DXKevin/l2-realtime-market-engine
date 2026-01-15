@@ -17,8 +17,8 @@ class OrderBook {
 public:
     explicit OrderBook(
         const std::string symbol,
-        std::shared_ptr<SendServer> send_server,
-        std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts
+        SendServer& sendServer_ref,
+        std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
     );
     ~OrderBook();
 
@@ -110,6 +110,6 @@ private:
     mutable std::mutex mtx_;
 
     // 外部关联数据
-    std::shared_ptr<SendServer> send_server_;
-    std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts_;
+    SendServer& sendServer_ref_;
+    std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref_;
 };

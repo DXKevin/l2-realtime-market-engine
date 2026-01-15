@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <winscard.h>
 
 #include "Logger.h"
 #include "DataStruct.h"
@@ -81,8 +82,7 @@ inline std::vector<MarketEvent> parseL2Data(
         size_t start = 0;
         size_t end = 0;
 
-        while ((end = full_record.find('#', start)) != std::string_view::npos) {
-            std::string_view order_part = full_record.substr(start, end - start);
+        auto splitfunc = [&](std::string_view order_part){
             if (!order_part.empty()) {
                 auto fields = splitByComma(order_part);
                 if (type == "order"){
@@ -101,7 +101,23 @@ inline std::vector<MarketEvent> parseL2Data(
                     }
                 }
             }
-            start = end + 1;  // 跳过 '#'
+        };
+
+        while (true) {
+            end = full_record.find("#", start);
+            if (end == std::string_view::npos) {
+                if (start >= full_record.size()) {
+                    break;
+                }
+
+                std::string_view order_part = full_record.substr(start);
+                splitfunc(order_part);
+                break;
+            } else {
+                std::string_view order_part = full_record.substr(start, end - start);
+                splitfunc(order_part);
+                start = end + 1;  // 跳过 '#'
+            }
         }
 
         pos = close + 1; // 移动到 '>' 之后
@@ -113,11 +129,11 @@ inline std::vector<MarketEvent> parseL2Data(
 
 inline std::string formatStockAccount(
     const std::string& stock_symbol,
-    const std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stock_with_accounts_ptr
+    const std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
 ) {
-    auto it = stock_with_accounts_ptr->find(stock_symbol);
+    auto it = stockWithAccounts_ref.find(stock_symbol);
 
-    if (it == stock_with_accounts_ptr->end()) {
+    if (it == stockWithAccounts_ref.end()) {
         return "";
     }
 
@@ -140,7 +156,7 @@ inline std::string formatStockAccount(
 
 inline std::string parseAndStoreStockAccount(
     const std::string_view message,
-    const std::shared_ptr<std::unordered_map<std::string, std::vector<std::string>>> stockWithAccountsPtr
+    std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
 ) {
     if (message.size() < 3 || message.front() != '<' || message.back() != '>') {
         // 格式不合法
@@ -168,7 +184,7 @@ inline std::string parseAndStoreStockAccount(
     }
 
     // 写入共享 map（注意：多线程需加锁！）
-    (*stockWithAccountsPtr)[std::string(symbol)] = std::move(result); 
+    stockWithAccounts_ref[std::string(symbol)] = std::move(result); 
 
     return std::string(symbol);
 }

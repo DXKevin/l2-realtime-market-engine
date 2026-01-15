@@ -4,12 +4,12 @@
 #include "Logger.h"
 #include "L2TcpSubscriber.h"
 #include "ConfigReader.h"
-#include "L2Parser.h"
 #include "OrderBook.h"
 #include "SendServer.h"
 #include "ReceiveServer.h"
 #include "L2HttpDownloader.h"
-
+#include "concurrentqueue/blockingconcurrentqueue.h"
+#include "MainExecutor.h"   
 
 
 int main() {
@@ -34,76 +34,61 @@ int main() {
         std::string password = config.get("auth", "password");
         LOG_INFO(module_name, "配置文件加载完成");
 
-        // 初始化全局数据结构: orderBooksPtr存放股票代码到OrderBook实例的映射, stockWithAccountsPtr存放股票代码到账户列表的映射
-        auto orderBooksPtr = std::make_shared<std::unordered_map<std::string, std::unique_ptr<OrderBook>>>();
-        auto stockWithAccountsPtr = std::make_shared<std::unordered_map<std::string, std::vector<std::string>>>();
+        // 初始化全局数据结构: 
+        // orderBooks存放股票代码到OrderBook实例的映射, 
+        // stockWithAccounts存放股票代码到账户列表的映射
+        // monitorEventQueue存放监控事件的队列
+        
+        
+        std::unordered_map<std::string, std::unique_ptr<OrderBook>> orderBooks;
+        std::unordered_map<std::string, std::vector<std::string>> stockWithAccounts;
+        moodycamel::BlockingConcurrentQueue<std::string> monitorEventQueue;
 
         // 初始化交易信号发送服务器
-        auto sendServerPtr = std::make_shared<SendServer>("to_python_pipe"); // 因为要被orderbook调用,所以用shared_ptr
+        SendServer sendServer("to_python_pipe");
 
         // 初始化HTTP下载器
         L2HttpDownloader downloader(
             http_url,
             username,
             password,
-            orderBooksPtr
+            orderBooks
         );
 
-        downloader.login();
-
         // 初始化行情服务器连接
-        L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
-        L2TcpSubscriber TradeSubscriber(host, trade_port, username, password, "trade", orderBooksPtr);
-
-        // 登录行情服务器
-        OrderSubscriber.connect();
-        TradeSubscriber.connect(); 
-
-        // 前端消息接收服务器回调函数
-        auto handleMessage = [
-            stockWithAccountsPtr,
-            orderBooksPtr,
-            sendServerPtr,
-            &OrderSubscriber,
-            &TradeSubscriber,
-            &downloader
-        ] (const std::string& message) {
-            std::string symbol = parseAndStoreStockAccount(message, stockWithAccountsPtr);
-            
-            if (symbol.empty()) {
-                LOG_WARN(module_name, "从前端消息解析出股票代码为空: {}", message);
-                return;
-            }
-
-            if (orderBooksPtr->find(symbol) != orderBooksPtr->end()) {
-                LOG_INFO(module_name, "股票代码 {} 的 OrderBook 已存在，跳过创建新实例", symbol);
-                return;
-            }
-
-            (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
-                symbol, 
-                sendServerPtr,
-                stockWithAccountsPtr
-            );
-
-            OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
-            TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
-
-            std::this_thread::sleep_for(std::chrono::seconds(10));
-            
-            // 下载历史数据
-            downloader.download_and_parse(symbol, "Order"); 
-            downloader.download_and_parse(symbol, "Tran");
-        };
+        L2TcpSubscriber orderSubscriber(host, order_port, username, password, "order", orderBooks);
+        L2TcpSubscriber tradeSubscriber(host, trade_port, username, password, "trade", orderBooks);
 
         // 初始化接收前端消息服务器
-        ReceiveServer recvServer("from_nodejs_pipe", handleMessage); 
+        ReceiveServer recvServer("from_nodejs_pipe", monitorEventQueue); 
 
-        // std::string symbol = "605255.SH";
-        // (*orderBooksPtr)[symbol] = std::make_unique<OrderBook>(
+        downloader.run();
+        orderSubscriber.run();
+        tradeSubscriber.run();
+
+        MainExecutor mainExecutor(
+            monitorEventQueue,
+            orderBooks,
+            stockWithAccounts,
+            sendServer,
+            orderSubscriber,
+            tradeSubscriber,
+            downloader
+        );
+
+        mainExecutor.run();
+
+
+        // 登录http与tcp行情服务器
+        // downloader.login();
+        // orderSubscriber.connect();
+        // tradeSubscriber.connect(); 
+
+        // std::string symbol = "600895.SH";
+        // orderBooks[symbol] = std::make_unique<OrderBook>(
         //     symbol, 
-        //     sendServerPtr,
-        //     stockWithAccountsPtr
+        //     sendServer,
+        //     stockWithAccounts
         // );
 
         // // 初始化行情服务器连接
@@ -114,9 +99,8 @@ int main() {
         // OrderSubscriber.connect();
         // TradeSubscriber.connect(); 
 
-        // OrderSubscriber.subscribe(symbol); // 订阅逐笔委托
-        // TradeSubscriber.subscribe(symbol); // 订阅逐笔成交
-
+        // orderSubscriber.subscribe(symbol); // 订阅逐笔委托
+        // tradeSubscriber.subscribe(symbol); // 订阅逐笔成交
 
         // while (true){
         //     sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
@@ -129,8 +113,8 @@ int main() {
         // 延迟5s
         // std::this_thread::sleep_for(std::chrono::seconds(10));
 
-        // downloader.download_and_parse(symbol, "Order");
-        // downloader.download_and_parse(symbol, "Tran");
+        ////downloader.download_and_parse(symbol, "Order");
+        ////downloader.download_and_parse(symbol, "Tran");
 
         // {
         //     L2HttpDownloader downloader(
@@ -146,9 +130,6 @@ int main() {
         // }
         
         
-
-
-            
         // // 前端消息接收服务器回调函数
         // auto handleMessage = [
         //     stockWithAccountsPtr,
@@ -214,6 +195,20 @@ int main() {
         //         LOG_WARN(module_name, "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
         //     }
         // }
+
+        // std::string test_data = "<285177368,001696.SZ,001696,20260115,135454830,45709183,232900,4500,2,2,0,0,2014#285177368,001696.SZ,001696,20260115,135454830,45709183,232900,4500,2,2,0,0,2014>";
+        // std::string test_buffer = "";
+        // auto event_list = parseL2Data(test_data, "order", test_buffer);
+
+        // for (const auto& event : event_list) {
+        //     std::get<L2Order>(event.data).info();
+        // }
+
+
+        // std::string test_data = "<285177368,001696.SZ,001696,20260115,135454830,45709183,232900,4500,2,2,0,0,2014#285177368,001696.SZ,001696,20260115,135454830,45709183,232900,4500,2,2,0,0,2014>";
+        // writeTxtFile("test.txt", test_data);
+        // writeTxtFile("test.txt", test_data);
+        // writeTxtFile("test.txt", test_data);
 
         std::cin.get();
 

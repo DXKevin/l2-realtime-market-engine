@@ -2,7 +2,7 @@
 #include "L2Parser.h"
 #include "nlohmann/json.hpp"
 #include "Logger.h"
-#include "ReadFile.h"
+#include "FileOperator.h"
 #include "Base64Decoder.h"
 
 
@@ -13,15 +13,19 @@ L2HttpDownloader::L2HttpDownloader(
     const std::string& base_url,
     const std::string& username,
     const std::string& password,
-    std::shared_ptr<std::unordered_map<std::string, std::unique_ptr<OrderBook>>> orderbooks_ptr
+    std::unordered_map<std::string, std::unique_ptr<OrderBook>>& orderBooks_ref
 ) : base_url_(base_url),
     username_(username),
     password_(password),
-    orderbooks_ptr_(orderbooks_ptr) 
+    orderBooks_ref_(orderBooks_ref) 
 {}
 
 L2HttpDownloader::~L2HttpDownloader() {
     waitAll();
+}
+
+void L2HttpDownloader::run() {
+    loginThread_ = std::thread(&L2HttpDownloader::loginLoop, this);
 }
 
 void L2HttpDownloader::login() {
@@ -29,7 +33,6 @@ void L2HttpDownloader::login() {
         {"userName", username_},
         {"userPwd", password_}
     };
-
 
     httplib::Client cli(base_url_);
     auto res = cli.Post("/Login", login_data.dump(), "application/json");
@@ -52,6 +55,9 @@ void L2HttpDownloader::login() {
                 std::string token = cookie_header.substr(start, end - start);
                 
                 cookie_ = "__beetlex_token=" + token;
+
+                is_logined_.store(true);
+                LOG_INFO("L2HttpDownloader", "登录HTTP服务器成功");
             } else {
                 LOG_ERROR("L2HttpDownloader", "登录成功，但响应头中没有 '__beetlex_token'");
                 return;
@@ -68,9 +74,19 @@ void L2HttpDownloader::login() {
     }
 }
 
+void L2HttpDownloader::loginLoop() {
+    while (true) {
+        if (!is_logined_.load()) {
+            login();
+        }   
+        
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+    }
+}
+
 void L2HttpDownloader::start_download_async(const std::string& symbol, const std::string& type) {
     auto task = std::async(std::launch::async, [this, symbol, type]() {
-        download(symbol, type);
+        download_and_parse(symbol, type);
     });
     
     std::lock_guard<std::mutex> lock(mtx_);
@@ -82,9 +98,9 @@ void L2HttpDownloader::download_and_parse(const std::string& symbol, const std::
 
     // std::string result = "";
     // if (type == "Order") { 
-    //     result = readCsvFile("data/20260114_Order_002195.SZ.csv");
+    //     result = readCsvFile("data/20260109_Order_600895.SH.csv");
     // } else if (type == "Tran") {
-    //     result = readCsvFile("data/20260114_Tran_002195.SZ.csv");
+    //     result = readCsvFile("data/20260109_Tran_600895.SH.csv");
     // }
 
     parse_data(symbol, type, result);
@@ -139,13 +155,13 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
     constexpr size_t ORDER_FIELDS = 14;
     constexpr size_t TRADE_FIELDS = 15;
 
-    auto it = orderbooks_ptr_->find(symbol);
-    if (it == orderbooks_ptr_->end()) {
+    auto it = orderBooks_ref_.find(symbol);
+    if (it == orderBooks_ref_.end()) {
         LOG_WARN("L2HttpDownloader", "未找到对应的 OrderBook 处理数据，合约代码: {}", symbol);
         return;
     }
 
-    LOG_INFO("L2HttpDownloader", "开始解析下载数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节", symbol, type, result_view.size());
+    LOG_INFO("L2HttpDownloader", "开始解析HTTP数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节", symbol, type, result_view.size());
     while (pos < result_view.size()) {
         size_t next = result_view.find('\n', pos);
 
@@ -225,5 +241,9 @@ void L2HttpDownloader::waitAll() {
         } catch (const std::exception& e) {
             LOG_ERROR("L2HttpDownloader", "下载任务异常: {}", e.what());
         }
+    }
+
+    if  (loginThread_.joinable()) {
+        loginThread_.join();
     }
 }

@@ -4,11 +4,15 @@
 #include <windows.h>
 
 
-ReceiveServer::ReceiveServer(const std::string& pipe_name, MessageHandler handler)
-    : full_pipe_name_("\\\\.\\pipe\\" + pipe_name), on_message_(handler) {
-    server_thread_ = std::thread(&ReceiveServer::runServer, this);
+ReceiveServer::ReceiveServer(
+    const std::string& pipe_name, 
+    moodycamel::BlockingConcurrentQueue<std::string>& monitorEventQueue
+): 
+full_pipe_name_("\\\\.\\pipe\\" + pipe_name), 
+monitorEventQueue_(monitorEventQueue) {
 
-    LOG_INFO("SendServer", "初始化消息服务器" + pipe_name);
+    server_thread_ = std::thread(&ReceiveServer::runServer, this);
+    LOG_INFO("ReceiveServer", "初始化监控事件消息服务器" + pipe_name);
 }
 
 ReceiveServer::~ReceiveServer() {
@@ -44,9 +48,7 @@ void ReceiveServer::runServer() {
         DWORD bytes_read = 0;
         if (ReadFile(hPipe, buffer, sizeof(buffer) - 1, &bytes_read, NULL) && bytes_read > 0) {
             buffer[bytes_read] = '\0';
-            if (on_message_) {
-                on_message_(std::string(buffer, bytes_read));
-            }
+            monitorEventQueue_.enqueue(std::string(buffer, bytes_read));
         }
 
         CloseHandle(hPipe); // 短连接：处理完即关闭

@@ -1,22 +1,23 @@
 #pragma once
 #include <string>
-#include <functional>
 #include <thread>
 #include <atomic>
 
+#include "concurrentqueue/blockingconcurrentqueue.h"
 
 class ReceiveServer {
 public:
-    using MessageHandler = std::function<void(const std::string&)>;
-
-    ReceiveServer(const std::string& pipe_name, MessageHandler handler);
+    ReceiveServer(
+        const std::string& pipe_name, 
+        moodycamel::BlockingConcurrentQueue<std::string>& monitorEventQueue
+    );
     ~ReceiveServer();
 
 private:
     std::string full_pipe_name_;
-    MessageHandler on_message_;
     std::thread server_thread_;
     std::atomic<bool> running_{true};
+    moodycamel::BlockingConcurrentQueue<std::string>& monitorEventQueue_;
 
     void runServer();
 };
