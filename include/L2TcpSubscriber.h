@@ -34,10 +34,12 @@ public:
     // 订阅特定合约
     void subscribe(const std::string& symbol);
 
-    std::atomic<bool> is_logined_;
-private:
     // 尝试连接和登录
     bool connect();
+
+    std::atomic<bool> is_logined_;
+private:
+
 
     // 发送数据
     void sendData(const std::string& message);

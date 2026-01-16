@@ -138,7 +138,6 @@ std::string L2HttpDownloader::download(const std::string& symbol, const std::str
         return "";
     }
 
-
     // 提取并解压gzip数据
     std::string data = res_json["Data"]["data"];
 
@@ -146,6 +145,13 @@ std::string L2HttpDownloader::download(const std::string& symbol, const std::str
     auto decompressed = gzip_decompress(decoded);
 
     std::string result(decompressed.begin(), decompressed.end());
+
+    if (type == "Order") {
+        writeTxtFile("http_order_data.txt", result);
+    } else if (type == "Tran") {
+        writeTxtFile("http_trade_data.txt", result);
+    }
+    
     return result;
 }
 

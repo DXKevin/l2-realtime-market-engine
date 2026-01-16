@@ -8,6 +8,7 @@
 
 #include "Logger.h"
 #include "DataStruct.h"
+#include "FileOperator.h"
 
 
 // 辅助函数：按 ',' 分割 string_view（不支持转义）
@@ -71,7 +72,7 @@ inline std::vector<MarketEvent> parseL2Data(
         if (close == std::string_view::npos) {
             buffer_ = buffer_.substr(open); // 保留不完整部分
 
-            LOG_WARN("L2Parser", "无法找到 '>', 保留不完整数据到缓冲区: {}", buffer_);
+            // LOG_WARN("L2Parser", "无法找到 '>', 保留不完整数据到缓冲区: {}", buffer_);
             return event_list;
         }
         
@@ -111,10 +112,20 @@ inline std::vector<MarketEvent> parseL2Data(
                 }
 
                 std::string_view order_part = full_record.substr(start);
+                if (type == "order") {
+                    writeTxtFile("tcp_order_data.txt", std::string(order_part));
+                } else if (type == "trade") {
+                    writeTxtFile("tcp_trade_data.txt", std::string(order_part));
+                }
                 splitfunc(order_part);
                 break;
             } else {
                 std::string_view order_part = full_record.substr(start, end - start);
+                if (type == "order") {
+                    writeTxtFile("tcp_order_data.txt", std::string(order_part));
+                } else if (type == "trade") {
+                    writeTxtFile("tcp_trade_data.txt", std::string(order_part));
+                }
                 splitfunc(order_part);
                 start = end + 1;  // 跳过 '#'
             }

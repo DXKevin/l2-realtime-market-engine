@@ -62,34 +62,34 @@ int main() {
         // 初始化接收前端消息服务器
         ReceiveServer recvServer("from_nodejs_pipe", monitorEventQueue); 
 
-        downloader.run();
-        orderSubscriber.run();
-        tradeSubscriber.run();
+        // downloader.run();
+        // orderSubscriber.run();
+        // tradeSubscriber.run();
 
-        MainExecutor mainExecutor(
-            monitorEventQueue,
-            orderBooks,
-            stockWithAccounts,
-            sendServer,
-            orderSubscriber,
-            tradeSubscriber,
-            downloader
-        );
+        // MainExecutor mainExecutor(
+        //     monitorEventQueue,
+        //     orderBooks,
+        //     stockWithAccounts,
+        //     sendServer,
+        //     orderSubscriber,
+        //     tradeSubscriber,
+        //     downloader
+        // );
 
-        mainExecutor.run();
+        //mainExecutor.run();
 
 
         // 登录http与tcp行情服务器
-        // downloader.login();
-        // orderSubscriber.connect();
-        // tradeSubscriber.connect(); 
+        downloader.login();
+        orderSubscriber.connect();
+        tradeSubscriber.connect(); 
 
-        // std::string symbol = "600895.SH";
-        // orderBooks[symbol] = std::make_unique<OrderBook>(
-        //     symbol, 
-        //     sendServer,
-        //     stockWithAccounts
-        // );
+        std::string symbol = "600410.SH";
+        orderBooks[symbol] = std::make_unique<OrderBook>(
+            symbol, 
+            sendServer,
+            stockWithAccounts
+        );
 
         // // 初始化行情服务器连接
         // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
@@ -99,8 +99,8 @@ int main() {
         // OrderSubscriber.connect();
         // TradeSubscriber.connect(); 
 
-        // orderSubscriber.subscribe(symbol); // 订阅逐笔委托
-        // tradeSubscriber.subscribe(symbol); // 订阅逐笔成交
+        orderSubscriber.subscribe(symbol); // 订阅逐笔委托
+        tradeSubscriber.subscribe(symbol); // 订阅逐笔成交
 
         // while (true){
         //     sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
@@ -111,10 +111,10 @@ int main() {
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
         // 延迟5s
-        // std::this_thread::sleep_for(std::chrono::seconds(10));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
 
-        ////downloader.download_and_parse(symbol, "Order");
-        ////downloader.download_and_parse(symbol, "Tran");
+        downloader.download_and_parse(symbol, "Order");
+        downloader.download_and_parse(symbol, "Tran");
 
         // {
         //     L2HttpDownloader downloader(

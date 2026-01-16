@@ -59,7 +59,7 @@ L2TcpSubscriber::L2TcpSubscriber(
     const std::string &password, const std::string &type,
     std::unordered_map<std::string, std::unique_ptr<OrderBook>> &orderBooks_ref)
     : host_(host), port_(port), username_(username), password_(password),
-      type_(type), orderBooks_ref_(orderBooks_ref), running_(false),
+      type_(type), orderBooks_ref_(orderBooks_ref), running_(true),
       is_logined_(false), sock_(INVALID_SOCKET) {}
 
 L2TcpSubscriber::~L2TcpSubscriber() { stop(); }
@@ -153,7 +153,9 @@ bool L2TcpSubscriber::connect() {
 
   std::string response(buffer, n);
 
-  if (isContainStrFlag(buffer, n, "Login successful")) {
+  if (isContainStrFlag(buffer, n, "Login successful") ||
+      isContainStrFlag(buffer, n, "Tran") ||
+      isContainStrFlag(buffer, n, "Order")) {
     LOG_INFO(module_name, "登录成功 <{}:{}>", host_, port_);
     is_logined_.store(true); // 设置合并后的状态
 
@@ -217,7 +219,6 @@ std::string L2TcpSubscriber::recvData() {
   }
 
   if (isContainStrFlag(buffer, n, "Login successful")) {
-    LOG_WARN(module_name, "意外收到登录成功消息（应在连接时处理）");
     return "1";
   }
 
@@ -283,6 +284,8 @@ void L2TcpSubscriber::receiveLoop() {
     if (data == "1") {
       continue;
     }
+
+    // LOG_INFO(module_name, "接收行情数据: {}", data);
 
     // 处理行情数据
     auto events = parseL2Data(data, type_, buffer_);

@@ -62,7 +62,7 @@ private:
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
-    int EVENT_TIMEOUT_MS = 30000; // 事件处理超时阈值，单位毫秒
+    int EVENT_TIMEOUT_MS = 60000; // 事件处理超时阈值，单位毫秒
 
     // 历史事件排序缓冲区
     std::vector<MarketEvent> history_event_buffer_;

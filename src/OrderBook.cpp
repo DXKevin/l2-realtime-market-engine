@@ -86,9 +86,9 @@ void OrderBook::runProcessingLoop() {
     int PROCESS_PENDING_EVENTS_INTERVAL = 100; // 每处理 100 笔事件处理一次待处理事件
 
     while (running_) {
-        if (isHistoryDataLoadingComplete() == false ||
-            is_history_event_queue_done_.load() == false ||
-            is_history_event_buffer_done_.load() == false
+        if (isHistoryDataLoadingComplete() == false
+            || is_history_event_queue_done_.load() == false
+            || is_history_event_buffer_done_.load() == false
         ) {
             MarketEvent hist_evt;
             if (!history_event_queue.wait_dequeue_timed(hist_evt, std::chrono::milliseconds(3000)) &&
@@ -157,6 +157,8 @@ void OrderBook::runProcessingLoop() {
             is_history_event_buffer_done_.store(true);
             generateDuplicateSets();
 
+            printOrderBook(10);
+
             LOG_INFO(module_name, "历史事件处理完毕，开始处理实时事件队列...");
             
         } else {
@@ -168,6 +170,19 @@ void OrderBook::runProcessingLoop() {
             // 处理实时事件队列
             MarketEvent evt;
             event_queue.wait_dequeue(evt);
+
+            // 处理重复事件
+            if (evt.type == MarketEvent::EventType::ORDER) {
+                if (history_order_id_.find(std::get<L2Order>(evt.data).num1) != history_order_id_.end()) {
+                    LOG_INFO(module_name, "出现重复单, 订单编号:{}", std::get<L2Order>(evt.data).num1);
+                    return;
+                }
+            } else if (evt.type == MarketEvent::EventType::TRADE) {
+                if (history_trade_id_.find(std::get<L2Trade>(evt.data).num1) != history_trade_id_.end()) {
+                    LOG_INFO(module_name, "出现重复单, 成交编号:{}", std::get<L2Trade>(evt.data).num1);
+                    return;
+                }
+            }
 
             std::lock_guard<std::mutex> lock(mtx_);
 
@@ -200,11 +215,6 @@ void OrderBook::runProcessingLoop() {
 void OrderBook::handleOrderEvent(const MarketEvent& event){
 
     const auto& order = std::get<L2Order>(event.data);
-
-    if (history_order_id_.find(order.num1) != history_order_id_.end()) {
-        LOG_INFO(module_name, "出现重复单");
-        return;
-    }
 
     if (order.timestamp > last_event_timestamp_) {
         last_event_timestamp_ = order.timestamp;
@@ -255,11 +265,6 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
 // 处理逐笔成交
 void OrderBook::handleTradeEvent(const MarketEvent& event){
     const auto& trade = std::get<L2Trade>(event.data);
-
-    if (history_trade_id_.find(trade.num1) != history_trade_id_.end()) {
-        LOG_INFO(module_name, "出现重复单");
-        return;
-    }
 
     if (trade.timestamp > last_event_timestamp_) {
         last_event_timestamp_ = trade.timestamp;
@@ -420,6 +425,12 @@ void OrderBook::onTrade(const int order_id, const int trade_volume, const int tr
             }
         }
 
+        if (order_id == 4856456) {
+            LOG_INFO(module_name, "处理成交 - ID: {}, 数量: {}, 方向: {}", 
+                order_id, trade_volume, trade_side);
+        }
+
+
         // 更新订单簿
         index_it->second->volume -= trade_volume;
 
@@ -576,6 +587,14 @@ void OrderBook::printOrderBook(int level_num) const {
     //                 order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
     //         }
     //     }
+    // }
+
+    // for (auto it = bids_.rbegin(); it != bids_.rend(); ++it) {
+    //     for (const auto& order_ref : it->second) {
+    //         LOG_INFO(module_name, "买盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
+    //             order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
+    //     }
+    //     break;
     // }
 
     // if (last_event_timestamp_ >= 41392860) {

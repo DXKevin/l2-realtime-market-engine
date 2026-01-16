@@ -22,11 +22,8 @@ target_include_directories(common
 )
 
 if(WIN32)
-    target_link_libraries(common PRIVATE ws2_32)
+    target_link_libraries(common PRIVATE ws2_32 z)
 endif()
-
-find_package(ZLIB REQUIRED)
-target_link_libraries(common PRIVATE ZLIB::ZLIB)
 
 # 主程序
 add_executable(main main.cpp)
