@@ -5,7 +5,6 @@
 #include <atomic>
 #include <memory>
 #include <unordered_map>
-#include <vector>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -35,7 +34,7 @@ public:
     void subscribe(const std::string& symbol);
 
     // 尝试连接和登录
-    bool connect();
+    bool login();
 
     std::atomic<bool> is_logined_;
 private:
@@ -53,8 +52,8 @@ private:
     // 接收循环线程函数
     void receiveLoop();
 
-    // 连接/重连循环线程函数
-    void connectLoop();
+    // 登录循环线程函数
+    void loginLoop();
 
     // 成员变量
     std::string host_;
@@ -67,7 +66,7 @@ private:
     std::atomic<bool> running_;
     SOCKET sock_;
     std::thread recvThread_;
-    std::thread connectThread_;
+    std::thread loginThread_;
 
     std::string buffer_; // 用于存储接收数据的缓冲区
 };

@@ -3,19 +3,10 @@
 #include <chrono>
 #include <iostream>
 
-
 #include "DataStruct.h"
 #include "L2Parser.h"
 #include "L2TcpSubscriber.h"
 #include "Logger.h"
-
-
-#ifdef _WIN32
-#include <ws2tcpip.h>
-#pragma comment(lib, "Ws2_32.lib")
-#else
-// TODO: add POSIX socket support if needed
-#endif
 
 static const char *module_name = "L2TcpSubscriber";
 
@@ -64,7 +55,7 @@ L2TcpSubscriber::L2TcpSubscriber(
 
 L2TcpSubscriber::~L2TcpSubscriber() { stop(); }
 
-bool L2TcpSubscriber::connect() {
+bool L2TcpSubscriber::login() {
   LOG_INFO(module_name, "正在连接服务器: {}:{}", host_, port_);
 
   if (!running_) {
@@ -153,9 +144,7 @@ bool L2TcpSubscriber::connect() {
 
   std::string response(buffer, n);
 
-  if (isContainStrFlag(buffer, n, "Login successful") ||
-      isContainStrFlag(buffer, n, "Tran") ||
-      isContainStrFlag(buffer, n, "Order")) {
+  if (isContainStrFlag(buffer, n, "Login successful")) {
     LOG_INFO(module_name, "登录成功 <{}:{}>", host_, port_);
     is_logined_.store(true); // 设置合并后的状态
 
@@ -206,6 +195,8 @@ std::string L2TcpSubscriber::recvData() {
   char buffer[8192] = {0};
   int n = recv(sock_, buffer, sizeof(buffer) - 1, 0);
 
+  LOG_INFO(module_name, "TCP 接收数据 <{}:{}>，数据: {}", host_, port_, std::string(buffer, n));
+
   if (n == SOCKET_ERROR) {
     int err = WSAGetLastError();
     LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>，错误码: {}", host_,
@@ -216,10 +207,6 @@ std::string L2TcpSubscriber::recvData() {
   if (n == 0) {
     LOG_ERROR(module_name, "TCP 连接已关闭 <{}:{}>", host_, port_);
     return "";
-  }
-
-  if (isContainStrFlag(buffer, n, "Login successful")) {
-    return "1";
   }
 
   if (isContainStrFlag(buffer, n, "DY2,0")) {
@@ -257,8 +244,8 @@ void L2TcpSubscriber::stop() {
     recvThread_.join();
   }
 
-  if (connectThread_.joinable()) {
-    connectThread_.join();
+  if (loginThread_.joinable()) {
+    loginThread_.join();
   }
 }
 
@@ -302,10 +289,10 @@ void L2TcpSubscriber::receiveLoop() {
   }
 }
 
-void L2TcpSubscriber::connectLoop() {
+void L2TcpSubscriber::loginLoop() {
   while (running_) {
     if (!is_logined_) {
-      if (connect()) {
+      if (login()) {
         break;
       } else {
         std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -318,5 +305,5 @@ void L2TcpSubscriber::connectLoop() {
 
 void L2TcpSubscriber::run() {
   running_ = true;
-  connectThread_ = std::thread(&L2TcpSubscriber::connectLoop, this);
+  loginThread_ = std::thread(&L2TcpSubscriber::loginLoop, this);
 }

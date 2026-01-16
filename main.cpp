@@ -81,8 +81,8 @@ int main() {
 
         // 登录http与tcp行情服务器
         downloader.login();
-        orderSubscriber.connect();
-        tradeSubscriber.connect(); 
+        orderSubscriber.login();
+        tradeSubscriber.login(); 
 
         std::string symbol = "600410.SH";
         orderBooks[symbol] = std::make_unique<OrderBook>(
@@ -111,10 +111,10 @@ int main() {
         // sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
 
         // 延迟5s
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        // std::this_thread::sleep_for(std::chrono::seconds(5));
 
-        downloader.download_and_parse(symbol, "Order");
-        downloader.download_and_parse(symbol, "Tran");
+        // downloader.download_and_parse(symbol, "Order");
+        // downloader.download_and_parse(symbol, "Tran");
 
         // {
         //     L2HttpDownloader downloader(
