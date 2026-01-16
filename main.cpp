@@ -84,7 +84,7 @@ int main() {
         orderSubscriber.login();
         tradeSubscriber.login(); 
 
-        std::string symbol = "600410.SH";
+        std::string symbol = "001696.SZ";
         orderBooks[symbol] = std::make_unique<OrderBook>(
             symbol, 
             sendServer,
@@ -113,8 +113,8 @@ int main() {
         // 延迟5s
         // std::this_thread::sleep_for(std::chrono::seconds(5));
 
-        // downloader.download_and_parse(symbol, "Order");
-        // downloader.download_and_parse(symbol, "Tran");
+        downloader.download_and_parse(symbol, "Order");
+        downloader.download_and_parse(symbol, "Tran");
 
         // {
         //     L2HttpDownloader downloader(

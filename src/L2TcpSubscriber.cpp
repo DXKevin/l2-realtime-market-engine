@@ -144,7 +144,9 @@ bool L2TcpSubscriber::login() {
 
   std::string response(buffer, n);
 
-  if (isContainStrFlag(buffer, n, "Login successful")) {
+  if (isContainStrFlag(buffer, n, "successful") ||
+      isContainStrFlag(buffer, n, "Order") ||
+      isContainStrFlag(buffer, n, "Tran")) {
     LOG_INFO(module_name, "登录成功 <{}:{}>", host_, port_);
     is_logined_.store(true); // 设置合并后的状态
 
@@ -195,8 +197,6 @@ std::string L2TcpSubscriber::recvData() {
   char buffer[8192] = {0};
   int n = recv(sock_, buffer, sizeof(buffer) - 1, 0);
 
-  LOG_INFO(module_name, "TCP 接收数据 <{}:{}>，数据: {}", host_, port_, std::string(buffer, n));
-
   if (n == SOCKET_ERROR) {
     int err = WSAGetLastError();
     LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>，错误码: {}", host_,
@@ -218,7 +218,8 @@ std::string L2TcpSubscriber::recvData() {
     return "1";
   }
 
-  if (isContainStrFlag(buffer, n, "Order") ||
+  if (isContainStrFlag(buffer, n, "successful") ||
+      isContainStrFlag(buffer, n, "Order") ||
       isContainStrFlag(buffer, n, "Tran")) {
     return "1";
   }

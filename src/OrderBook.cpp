@@ -3,6 +3,7 @@
 #include "L2Parser.h"
 
 #include <vector>
+#include <winscard.h>
 
 
 static const char* module_name = "OrderBook";
@@ -175,12 +176,12 @@ void OrderBook::runProcessingLoop() {
             if (evt.type == MarketEvent::EventType::ORDER) {
                 if (history_order_id_.find(std::get<L2Order>(evt.data).num1) != history_order_id_.end()) {
                     LOG_INFO(module_name, "出现重复单, 订单编号:{}", std::get<L2Order>(evt.data).num1);
-                    return;
+                    continue;
                 }
             } else if (evt.type == MarketEvent::EventType::TRADE) {
                 if (history_trade_id_.find(std::get<L2Trade>(evt.data).num1) != history_trade_id_.end()) {
                     LOG_INFO(module_name, "出现重复单, 成交编号:{}", std::get<L2Trade>(evt.data).num1);
-                    return;
+                    continue;
                 }
             }
 
@@ -589,13 +590,13 @@ void OrderBook::printOrderBook(int level_num) const {
     //     }
     // }
 
-    // for (auto it = bids_.rbegin(); it != bids_.rend(); ++it) {
-    //     for (const auto& order_ref : it->second) {
-    //         LOG_INFO(module_name, "买盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
-    //             order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
-    //     }
-    //     break;
-    // }
+    for (auto it = asks_.begin(); it != asks_.end(); ++it) {
+        for (const auto& order_ref : it->second) {
+            LOG_INFO(module_name, "卖盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
+                order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
+        }
+        break;
+    }
 
     // if (last_event_timestamp_ >= 41392860) {
     //     auto it = bids_.find(235500);
