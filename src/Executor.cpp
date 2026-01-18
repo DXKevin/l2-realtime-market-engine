@@ -44,6 +44,7 @@ void Executor::init() {
     orderBooks_ = std::make_unique<
         std::unordered_map<std::string, std::unique_ptr<OrderBook>>
     >();
+
     stockWithAccounts_ = std::make_unique<
         AutoSaveJsonMap<std::string, std::vector<int>>
     >("stocks_monitor.json");
@@ -113,12 +114,18 @@ void Executor::monitorEventLoop() {
         }
 
         // 等待前端监控消息 
-        while (isLogined()) {
+        while (isLogined()) { 
+            LOG_INFO(module_name_, "等待前端监控消息...");
             std::string event;
             monitorEventQueue_->wait_dequeue(event);
-            
+            std::string symbol = parseAndStoreStockAccount(event, *stockWithAccounts_);
+            if (symbol.empty()) {
+                LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
+                continue;
+            }
+
             // 处理监控事件
-            handleMonitorEvent(event);
+            handleMonitorEvent(symbol);
         }
 
         // 服务器登录断开，请求重启
@@ -131,15 +138,12 @@ bool Executor::isLogined() {
             tradeSubscriber_->is_logined_;
 }
 
-void Executor::handleMonitorEvent(const std::string& event) {
-    std::string symbol = parseAndStoreStockAccount(event, *stockWithAccounts_);
-    if (!isLogined()) {
-        LOG_WARN(module_name_, "未登录行情服务器，跳过处理监控事件: {}", event);
-        return;
-    }
+void Executor::handleMonitorEvent(const std::string& symbol) {
+    
 
-    if (symbol.empty()) {
-        LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
+
+    if (!isLogined()) {
+        LOG_WARN(module_name_, "未登录行情服务器，跳过处理股票代码 {} 的监控事件", symbol);
         return;
     }
 
