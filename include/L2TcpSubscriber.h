@@ -36,6 +36,9 @@ public:
     // 尝试连接和登录
     bool login();
 
+    void startLoadHistoryData(const std::string& symbol, const std::string& type);
+    void loadHistoryData(const std::string& symbol, const std::string& type);
+
     std::atomic<bool> is_logined_;
 private:
 
@@ -55,6 +58,9 @@ private:
     // 登录循环线程函数
     void loginLoop();
 
+    
+    
+
     // 成员变量
     std::string host_;
     int port_;
@@ -67,6 +73,7 @@ private:
     SOCKET sock_;
     std::thread recvThread_;
     std::thread loginThread_;
+    std::thread historyThread_;
 
     std::string buffer_; // 用于存储接收数据的缓冲区
 };

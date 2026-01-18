@@ -9,6 +9,7 @@
 #include "Logger.h"
 #include "DataStruct.h"
 #include "FileOperator.h"
+#include "AutoSaveJsonMap.hpp"
 
 
 // 辅助函数：按 ',' 分割 string_view（不支持转义）
@@ -140,23 +141,26 @@ inline std::vector<MarketEvent> parseL2Data(
 
 inline std::string formatStockAccount(
     const std::string& stock_symbol,
-    const std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
+    const AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
 ) {
-    auto it = stockWithAccounts_ref.find(stock_symbol);
-
-    if (it == stockWithAccounts_ref.end()) {
+    if (!stockWithAccounts_ref.contains(stock_symbol)) {
         return "";
     }
 
     std::string result = "<" + stock_symbol + "#";
 
-    const auto& accounts = it->second;
+    const auto accounts_opt = stockWithAccounts_ref.get(stock_symbol);
+    if (!accounts_opt) {
+        LOG_ERROR("L2Parser", "无法获取股票代码 {} 的账户信息", stock_symbol);
+        return "";
+    }
+    const auto& accounts = *accounts_opt;
     for (size_t i = 0; i < accounts.size(); ++i) {
         if (i > 0) {
             result += ",";
         }
 
-        result += accounts[i];
+        result += std::to_string(accounts[i]);
 
     }
 
@@ -167,7 +171,7 @@ inline std::string formatStockAccount(
 
 inline std::string parseAndStoreStockAccount(
     const std::string_view message,
-    std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
+    AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
 ) {
     if (message.size() < 3 || message.front() != '<' || message.back() != '>') {
         // 格式不合法
@@ -188,14 +192,14 @@ inline std::string parseAndStoreStockAccount(
     std::string_view symbol = content.substr(0, pos);
     std::string_view accountsStr = content.substr(pos + 1);
 
-    std::vector<std::string> result;
+    std::vector<int> result;
     auto accounts_views = splitByComma(accountsStr);
     for (const auto& acc_view : accounts_views) {
-        result.emplace_back(acc_view);
+        result.emplace_back(svToInt(acc_view));
     }
 
-    // 写入共享 map（注意：多线程需加锁！）
-    stockWithAccounts_ref[std::string(symbol)] = std::move(result); 
+    // 如果有对各对象要
+    stockWithAccounts_ref.set(std::string(symbol), result); 
 
     return std::string(symbol);
 }

@@ -5,12 +5,12 @@
 #include <thread>
 #include <atomic>
 #include <unordered_map>
-#include <deque>
 #include <unordered_set>
 
 #include "concurrentqueue/blockingconcurrentqueue.h"
 #include "DataStruct.h"
 #include "SendServer.h"
+#include "AutoSaveJsonMap.hpp"
 
 
 class OrderBook {
@@ -18,7 +18,7 @@ public:
     explicit OrderBook(
         const std::string symbol,
         SendServer& sendServer_ref,
-        std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
+        AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
     );
     ~OrderBook();
 
@@ -35,10 +35,7 @@ private:
     void runProcessingLoop();
     void handleOrderEvent(const MarketEvent& event);
     void handleTradeEvent(const MarketEvent& event);
-    void processPendingEvents();
 
-    bool isBuyOrderDone(const int num1) const;
-    bool isSellOrderDone(const int num1) const;
     bool isOrderExists(const int order_id) const;
     void addOrder(const L2Order& order);
     void onTrade(const int order_id, const int trade_volume, const int trade_side);
@@ -58,11 +55,10 @@ private:
     };
     
     std::string symbol_;
+    std::string market_flag_;
     
     int max_bid_volume_ = 0; // 最大封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
-
-    int EVENT_TIMEOUT_MS = 60000; // 事件处理超时阈值，单位毫秒
 
     // 历史事件排序缓冲区
     std::vector<MarketEvent> history_event_buffer_;
@@ -84,12 +80,11 @@ private:
     std::map<int,std::list<OrderRef>> bids_;
     std::map<int,std::list<OrderRef>> asks_;
 
-    // 已完成买单对应成交编号集合, 对于逐笔成交中只有一方存在加入等待列表会出现重复成交扣减的情况处理
-    std::unordered_set<int> buy_order_done_ids_; 
-    std::unordered_set<int> sell_order_done_ids_;
+    // 待成交事件集合<order_id, 事件列表>
+    std::unordered_map<int, std::vector<MarketEvent>> pending_trade_events_;
 
-    // 暂存待处理事件
-    std::deque<MarketEvent> pending_events_; 
+    // 待撤单事件集合<order_id, 事件列表>
+    std::unordered_map<int, MarketEvent> pending_cancel_events_;
 
     // 快速查找订单
     std::unordered_map<int, std::list<OrderRef>::iterator> order_index_;
@@ -111,5 +106,5 @@ private:
 
     // 外部关联数据
     SendServer& sendServer_ref_;
-    std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref_;
+    AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref_;
 };

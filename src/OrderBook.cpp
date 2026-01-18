@@ -1,17 +1,17 @@
 #include "OrderBook.h"
+#include "DataStruct.h"
 #include "Logger.h"
 #include "L2Parser.h"
 
+#include <algorithm>
 #include <vector>
-#include <winscard.h>
-
 
 static const char* module_name = "OrderBook";
 
 OrderBook::OrderBook(
     const std::string symbol, 
     SendServer& sendServer_ref,
-    std::unordered_map<std::string, std::vector<std::string>>& stockWithAccounts_ref
+    AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
 ) : 
     symbol_(symbol), sendServer_ref_(sendServer_ref), stockWithAccounts_ref_(stockWithAccounts_ref) {
 
@@ -19,6 +19,8 @@ OrderBook::OrderBook(
         LOG_ERROR(module_name, "OrderBook 无法用空股票代码初始化~");
         return;
     };
+
+    market_flag_ = symbol_[0] == '6' ? "SH" : "SZ";
 
     processing_thread_ = std::thread(&OrderBook::runProcessingLoop, this);
 }
@@ -88,7 +90,7 @@ void OrderBook::runProcessingLoop() {
 
     while (running_) {
         if (isHistoryDataLoadingComplete() == false
-            || is_history_event_queue_done_.load() == false
+            || is_history_event_queue_done_.load() == false  
             || is_history_event_buffer_done_.load() == false
         ) {
             MarketEvent hist_evt;
@@ -143,18 +145,9 @@ void OrderBook::runProcessingLoop() {
 
                 // checkLimitUpWithdrawal(timestamp);   
                 
-                // 定期处理待处理事件
-                ++process_pending_events_count;
-                if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
-                    processPendingEvents();
-                    process_pending_events_count = 0;
-                }
             }
             std::vector<MarketEvent>().swap(history_event_buffer_);
 
-            processPendingEvents();
-
-            PROCESS_PENDING_EVENTS_INTERVAL = 10;
             is_history_event_buffer_done_.store(true);
             generateDuplicateSets();
 
@@ -165,7 +158,7 @@ void OrderBook::runProcessingLoop() {
         } else {
             // 启动打印线程
             if (!print_thread_.joinable()) {
-                print_thread_ = std::thread(&OrderBook::printloop, this, 10);
+                print_thread_ = std::thread(&OrderBook::printloop, this, 5);
             }
 
             // 处理实时事件队列
@@ -200,14 +193,6 @@ void OrderBook::runProcessingLoop() {
 
             // 检查涨停撤单
             checkLimitUpWithdrawal(timestamp);
-
-            // 定期处理待处理事件
-            ++process_pending_events_count;
-            if (process_pending_events_count == PROCESS_PENDING_EVENTS_INTERVAL) {
-                processPendingEvents();
-                process_pending_events_count = 0;
-            }
-
         }
     }
 }
@@ -221,7 +206,7 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
         last_event_timestamp_ = order.timestamp;
     }
     
-    if (order.symbol[0] == '6'){
+    if (market_flag_ == "SH") {
         // 上海逐笔委托处理逻辑
         // 上海逐笔委托 --> 限价2 --> 可以入队
         // 上海逐笔委托 --> 撤单10 --> 要处理乱序的可能
@@ -232,20 +217,38 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
                 onCancelOrder(order.id, order.volume);
                 return;
             } else {
-                // 未找到订单，加入等待队列
-                if (order.timestamp + EVENT_TIMEOUT_MS < last_event_timestamp_) {
-                    return;
-                }
-
-                pending_events_.push_back(event);
+                // 未找到订单，加入等待撤单事件队列
+                pending_cancel_events_[order.id] = std::move(event);
                 return;
             }
 
         } else if (order.type == 2)
         {   
+            // 添加限价单
+            // 添加后需要在分别在等待成交事件队列和等待撤单事件队列中查找
             addOrder(order);
+
+            auto trade_it = pending_trade_events_.find(order.id);
+            if (trade_it != pending_trade_events_.end()) {
+                // 处理因乱序而等待的成交
+                for (auto& trade_event : trade_it->second) {
+                    onTrade(order.id, std::get<L2Trade>(trade_event.data).volume, std::get<L2Trade>(trade_event.data).side);
+                }
+                pending_trade_events_.erase(trade_it);
+
+            }
+
+            auto cancel_it = pending_cancel_events_.find(order.id);
+            if (cancel_it != pending_cancel_events_.end()) {
+                // 处理因乱序而等待的撤单                
+                MarketEvent cancel_event = std::move(cancel_it->second);
+                onCancelOrder(order.id, std::get<L2Order>(cancel_event.data).volume);
+                pending_cancel_events_.erase(cancel_it);
+
+            }
         } else {
             // 处理市价与本方最优逐笔委托
+            // 非限价单不入订单簿
             return;
         }
         
@@ -255,9 +258,31 @@ void OrderBook::handleOrderEvent(const MarketEvent& event){
         /* 深圳逐笔委托 --> 市价单1/本方最优3 --> 这种订单由于价格未知不会加入Book, 
             但是会存下id, 用于后续处理trade, 虽然很少是这类单子但是也要处理 */
         if (order.type == 2) {
+            // 添加限价单
+            // 添加后需要在分别在等待成交事件队列和等待撤单事件队列中查找
             addOrder(order);
+
+            auto trade_it = pending_trade_events_.find(order.id);
+            if (trade_it != pending_trade_events_.end()) {
+                // 处理因乱序而等待的成交
+                for (auto& trade_event : trade_it->second) {
+                    onTrade(order.id, std::get<L2Trade>(trade_event.data).volume, std::get<L2Trade>(trade_event.data).side);
+                }
+                pending_trade_events_.erase(trade_it);
+
+            }
+
+            auto cancel_it = pending_cancel_events_.find(order.id);
+            if (cancel_it != pending_cancel_events_.end()) {
+                // 处理因乱序而等待的撤单                
+                MarketEvent cancel_event = std::move(cancel_it->second);
+                onCancelOrder(order.id, std::get<L2Trade>(cancel_event.data).volume);
+                pending_cancel_events_.erase(cancel_it);
+ 
+            }
         } else {
             // 处理市价与本方最优逐笔委托
+            // 非限价单不入订单簿
             return;
         }
     }
@@ -284,14 +309,9 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
                 onCancelOrder(order_id, trade.volume);
                 return;
             } else {
-                if (trade.timestamp + EVENT_TIMEOUT_MS < last_event_timestamp_) {
-                    // 长时间未找到订单，丢弃该撤单请求
-                    return;
-                } else {
-                    // 未找到订单，加入等待队列
-                    pending_events_.push_back(event);
-                    return;
-                }
+                // 未找到订单，加入等待撤单事件队列
+                pending_cancel_events_[order_id] = std::move(event);
+                return;
             }
         };
 
@@ -307,17 +327,8 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
 
         if (is_exist_buy && is_exist_sell) {
             // 成交双方的订单都存在于订单簿中, 直接处理成交
-
-            if (!isBuyOrderDone(trade.num1)) {
-                onTrade(trade.buy_id, trade.volume, trade.side);
-            }
-
-            if (!isSellOrderDone(trade.num1)) {
-                onTrade(trade.sell_id, trade.volume, trade.side);
-            }
-
-            buy_order_done_ids_.erase(trade.num1);
-            sell_order_done_ids_.erase(trade.num1);
+            onTrade(trade.buy_id, trade.volume, trade.side);
+            onTrade(trade.sell_id, trade.volume, trade.side);
 
         } else if ((is_exist_buy || is_exist_sell)) {
             // 成交双方只有一方存在于订单簿中
@@ -325,67 +336,45 @@ void OrderBook::handleTradeEvent(const MarketEvent& event){
             // 1、市价单, 2、乱序到达, 3、临时启动程序无原始盘口, 
             // 优先处理存在的一方并加入等待队列, 等待另一方订单到达
             if (is_exist_buy) {
-                if (isBuyOrderDone(trade.num1)) {
-                    // 已处理过该买单对应的成交编号，避免重复处理
-                    pending_events_.push_back(event);
+                // 处理买单
+                onTrade(trade.buy_id, trade.volume, trade.side);    
+                // 将卖单加入等待队列
+                if (market_flag_ == "SH" && trade.side == 2) {
                     return;
-                } else {
-                    onTrade(trade.buy_id, trade.volume, trade.side);
-                    pending_events_.push_back(event);
-                    buy_order_done_ids_.insert(trade.num1);
                 }
+                
+                pending_trade_events_[trade.sell_id].push_back(event);
             } else {
-                if (isSellOrderDone(trade.num1)) {
-                    // 已处理过该卖单对应的成交编号，避免重复处理
-                    pending_events_.push_back(event);
+                // 处理卖单
+                onTrade(trade.sell_id, trade.volume, trade.side);
+                // 将买单加入等待队列
+                if (market_flag_ == "SH" && trade.side == 1) {
                     return;
-                } else {
-                    onTrade(trade.sell_id, trade.volume, trade.side);
-                    pending_events_.push_back(event);
-                    sell_order_done_ids_.insert(trade.num1);
                 }
+
+                pending_trade_events_[trade.buy_id].push_back(event);
             }
         } else {
             // 双方订单都不存在于订单簿中, 可能是乱序, 加入等待队列
-            if (trade.timestamp + EVENT_TIMEOUT_MS < last_event_timestamp_) {
-                // 长时间未找到订单，丢弃该成交请求
-                buy_order_done_ids_.erase(trade.num1);
-                sell_order_done_ids_.erase(trade.num1);
-                return;
+            if (market_flag_ == "SH") {
+                if (trade.side == 2) {
+                    pending_trade_events_[trade.buy_id].push_back(event);
+                }
+
+                if (trade.side == 1) {
+                    pending_trade_events_[trade.sell_id].push_back(event);
+                }
+
+                if (trade.side == 0) {
+                    pending_trade_events_[trade.buy_id].push_back(event);
+                    pending_trade_events_[trade.sell_id].push_back(event);
+                }
             } else {
-                pending_events_.push_back(event);
+                pending_trade_events_[trade.sell_id].push_back(event);
+                pending_trade_events_[trade.buy_id].push_back(event);
             }
-        } 
-    }
-}
-
-// 处理待处理事件队列
-void OrderBook::processPendingEvents() {
-    // const size_t max_process = 10000; // 每次最多处理5个待处理事件
-    const size_t max_process = pending_events_.size(); // 每次处理所有待处理事件
-    size_t processed_index = 0;
-
-    while (processed_index < max_process && !pending_events_.empty()) {
-        MarketEvent event = std::move(pending_events_.front());
-        pending_events_.pop_front();
-
-        if (event.type == MarketEvent::EventType::ORDER) {
-            handleOrderEvent(event);
-        } else if (event.type == MarketEvent::EventType::TRADE) {
-            handleTradeEvent(event);
         }
-        ++processed_index;
     }
-}
-
-// 判断买单是否处理过
-bool OrderBook::isBuyOrderDone(const int num1) const {
-    return buy_order_done_ids_.find(num1) != buy_order_done_ids_.end();
-}
-
-// 判断卖单是否处理过
-bool OrderBook::isSellOrderDone(const int num1) const {
-    return sell_order_done_ids_.find(num1) != sell_order_done_ids_.end();
 }
 
 // 检查订单是否存在
@@ -419,18 +408,12 @@ void OrderBook::onTrade(const int order_id, const int trade_volume, const int tr
         int price = index_it->second->price;
         int side = index_it->second->side;
         
-        if (symbol_[0] == '6') {
+        if (market_flag_ == "SH") {
             if (trade_side == side) {
                 // 上海市场买卖方向与成交方向相同的订单不处理封单量, 因为主动成交的一方委托量不会出现在订单簿中
                 return; 
             }
         }
-
-        if (order_id == 4856456) {
-            LOG_INFO(module_name, "处理成交 - ID: {}, 数量: {}, 方向: {}", 
-                order_id, trade_volume, trade_side);
-        }
-
 
         // 更新订单簿
         index_it->second->volume -= trade_volume;
@@ -452,6 +435,9 @@ void OrderBook::onTrade(const int order_id, const int trade_volume, const int tr
             // 如果订单量为0, 从订单簿和索引中移除
             removeOrder(id);
         }
+
+        // LOG_INFO(module_name, "成交订单信息 -- > 订单ID:{}, 订单价格:{}, 订单方向:{}", 
+        //     id, price, side);
     };
     
     reduce_volume(order_id);
@@ -590,13 +576,13 @@ void OrderBook::printOrderBook(int level_num) const {
     //     }
     // }
 
-    for (auto it = asks_.begin(); it != asks_.end(); ++it) {
-        for (const auto& order_ref : it->second) {
-            LOG_INFO(module_name, "卖盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
-                order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
-        }
-        break;
-    }
+    // for (auto it = asks_.begin(); it != asks_.end(); ++it) {
+    //     for (const auto& order_ref : it->second) {
+    //         LOG_INFO(module_name, "卖盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
+    //             order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
+    //     }
+    //     break;
+    // }
 
     // if (last_event_timestamp_ >= 41392860) {
     //     auto it = bids_.find(235500);
@@ -608,13 +594,19 @@ void OrderBook::printOrderBook(int level_num) const {
     //     }
     // }
 
+    // for (auto it = pending_trade_events_.begin(); it != pending_trade_events_.end(); ++it) {
+    //     LOG_INFO(module_name, "等待成交事件 - ID: {}", it->first);
+    // }
+
+    // for (auto it = pending_cancel_events_.begin(); it != pending_cancel_events_.end(); ++it) {
+    //     LOG_INFO(module_name, "等待撤单事件 - ID: {}", it->first);
+    // }
+
     LOG_INFO(module_name, "买盘价格订单总数量 {}", total_bid_list_size);
     LOG_INFO(module_name, "卖盘价格订单总数量 {}", total_ask_list_size);
-
     LOG_INFO(module_name, "历史事件去重集合大小: {}", history_order_id_.size());
-    LOG_INFO(module_name, "等待事件队列大小: {}", pending_events_.size());
-    LOG_INFO(module_name, "已完成买单对应成交编号集合大小:{}", buy_order_done_ids_.size());
-    LOG_INFO(module_name, "已完成卖单对应成交编号集合大小:{}", sell_order_done_ids_.size());
+    LOG_INFO(module_name, "等待成交事件队列大小: {}", pending_trade_events_.size());
+    LOG_INFO(module_name, "等待撤单事件队列大小: {}", pending_cancel_events_.size());
     LOG_INFO(module_name, "订单索引大小: {}", order_index_.size());
     LOG_INFO(module_name, "买盘档位数量: {}", bids_.size());
     LOG_INFO(module_name, "卖盘档位数量: {}", asks_.size());

@@ -2,6 +2,7 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <string_view>
 
 #include "DataStruct.h"
 #include "L2Parser.h"
@@ -265,8 +266,8 @@ void L2TcpSubscriber::receiveLoop() {
     if (data.empty()) {
       LOG_WARN(module_name, "接收线程检测到连接断开，准备重连 <{}:{}>", host_,
                port_);
-      is_logined_ = false; // 设置状态为未登录
-      break;               // 退出接收循环，回到 connectLoop 继续尝试
+      is_logined_.store(false); // 设置状态为未登录
+      break;                    // 退出接收循环，回到 connectLoop 继续尝试
     }
 
     if (data == "1") {
@@ -302,6 +303,99 @@ void L2TcpSubscriber::loginLoop() {
       std::this_thread::sleep_for(std::chrono::seconds(10));
     }
   }
+}
+
+void L2TcpSubscriber::loadHistoryData(const std::string &symbol,
+                                      const std::string &type) {
+  std::string result = "";
+  if (type == "Order") {
+    result = readCsvFile("data/20260106_Order_000592.SZ.csv");
+  } else if (type == "Tran") {
+    result = readCsvFile("data/20260106_Tran_000592.SZ.csv");
+  }
+
+  std::string_view result_view(result);
+
+  // 解析数据
+  size_t pos = 0;
+  constexpr size_t ORDER_FIELDS = 14;
+  constexpr size_t TRADE_FIELDS = 15;
+
+  auto it = orderBooks_ref_.find(symbol);
+  if (it == orderBooks_ref_.end()) {
+    LOG_WARN("L2TcpSubscriber", "未找到对应的 OrderBook 处理数据，合约代码: {}",
+             symbol);
+    return;
+  }
+
+  LOG_INFO("L2TcpSubscriber",
+           "开始解析HTTP数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节",
+           symbol, type, result_view.size());
+  while (pos < result_view.size()) {
+    size_t next = result_view.find('\n', pos);
+
+    if (pos == 0) {
+      // 跳过首行表头
+      pos = next + 1;
+      continue;
+    }
+
+    std::string_view line;
+    if (next == std::string_view::npos) {
+      line = result_view.substr(pos);
+    } else {
+      line = result_view.substr(pos, next - pos);
+    }
+
+    auto fields = splitByComma(line);
+
+    if (type == "Order") {
+      if (fields.size() == ORDER_FIELDS) {
+        std::vector<std::string_view> relevant_fields = {
+            fields[0],  fields[1],  fields[2], fields[3], fields[4],
+            fields[5],  fields[6],  fields[7], fields[8], fields[9],
+            fields[10], fields[11], fields[12]};
+
+        MarketEvent event = MarketEvent(L2Order(relevant_fields));
+
+        const auto &order = std::get<L2Order>(event.data);
+        it->second->pushEvent(event);
+
+        // if (order.timestamp < 42000000) {
+        //     it->second->pushHistoryEvent(event);
+        // }
+      } else {
+        LOG_WARN("L2TcpSubscriber", "order字段数不匹配, data:{} --> size:{}",
+                 line, fields.size());
+      }
+    } else if (type == "Tran") {
+      if (fields.size() == TRADE_FIELDS) {
+        std::vector<std::string_view> relevant_fields = {
+            fields[0],  fields[1],  fields[2],  fields[3], fields[4],
+            fields[5],  fields[6],  fields[7],  fields[8], fields[9],
+            fields[10], fields[11], fields[12], fields[13]};
+
+        MarketEvent event = MarketEvent(L2Trade(relevant_fields));
+
+        const auto &trade = std::get<L2Trade>(event.data);
+        it->second->pushEvent(event);
+
+        // if (trade.timestamp < 42000000) {
+        //     it->second->pushHistoryEvent(event);
+        // }
+      } else {
+        LOG_WARN("L2TcpSubscriber", "trade字段数不匹配, data:{} --> size:{}",
+                 line, fields.size());
+      }
+    }
+    pos = next + 1;
+  }
+}
+
+void L2TcpSubscriber::startLoadHistoryData(const std::string &symbol,
+                                           const std::string &type) {
+  historyThread_ =
+      std::thread(&L2TcpSubscriber::loadHistoryData, this, symbol, type);
 }
 
 void L2TcpSubscriber::run() {

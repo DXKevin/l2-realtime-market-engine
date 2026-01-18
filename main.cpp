@@ -1,21 +1,25 @@
 #include <iostream>
-#include <memory>
 
 #include "Logger.h"
-#include "L2TcpSubscriber.h"
-#include "ConfigReader.h"
-#include "OrderBook.h"
-#include "SendServer.h"
-#include "ReceiveServer.h"
-#include "L2HttpDownloader.h"
-#include "concurrentqueue/blockingconcurrentqueue.h"
-#include "MainExecutor.h"   
+#include "ExecutorManager.h"
+
 
 
 int main() {
     static const char* module_name = "Main";
 
+    // 初始化设置
+    SetConsoleOutputCP(CP_UTF8); // 设置控制台为UTF-8编码以支持中文输出，防止exe运行时命令行输出乱码
+
+    // 初始化日志系统
+    init_log_system("logs/app.log");
+
     try {
+
+        ExecutorManager manager;
+        manager.run();
+
+        /*
         // 初始化设置
         SetConsoleOutputCP(CP_UTF8); // 设置控制台为UTF-8编码以支持中文输出，防止exe运行时命令行输出乱码
 
@@ -80,16 +84,22 @@ int main() {
 
 
         // 登录http与tcp行情服务器
-        downloader.login();
-        orderSubscriber.login();
-        tradeSubscriber.login(); 
+        // downloader.login();
+        // orderSubscriber.login();
+        // tradeSubscriber.login(); 
 
-        std::string symbol = "001696.SZ";
+        std::string symbol = "600895.SH";
         orderBooks[symbol] = std::make_unique<OrderBook>(
             symbol, 
             sendServer,
             stockWithAccounts
         );
+        
+        // orderSubscriber.startLoadHistoryData(symbol, "Order");
+        // tradeSubscriber.startLoadHistoryData(symbol, "Tran");
+
+        // orderSubscriber.startLoadHistoryData(symbol, "Order");
+        // tradeSubscriber.startLoadHistoryData(symbol, "Tran");
 
         // // 初始化行情服务器连接
         // L2TcpSubscriber OrderSubscriber(host, order_port, username, password, "order", orderBooksPtr);
@@ -99,8 +109,8 @@ int main() {
         // OrderSubscriber.connect();
         // TradeSubscriber.connect(); 
 
-        orderSubscriber.subscribe(symbol); // 订阅逐笔委托
-        tradeSubscriber.subscribe(symbol); // 订阅逐笔成交
+        // orderSubscriber.subscribe(symbol); // 订阅逐笔委托
+        // tradeSubscriber.subscribe(symbol); // 订阅逐笔成交
 
         // while (true){
         //     sendServerPtr->send("<000001.SZ#10002000,231312,account3>");
@@ -209,6 +219,11 @@ int main() {
         // writeTxtFile("test.txt", test_data);
         // writeTxtFile("test.txt", test_data);
         // writeTxtFile("test.txt", test_data);
+        */
+
+
+
+
 
         std::cin.get();
 
