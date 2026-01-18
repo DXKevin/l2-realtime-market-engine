@@ -718,11 +718,20 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     }
 
     // 记录当前封单比例
-    limit_up_fengdan_ratios_[timestamp] = current_ratio;
+    auto it = limit_up_fengdan_ratios_.find(timestamp);
+    if (it == limit_up_fengdan_ratios_.end()) {
+        // 键不存在，直接插入新键值对
+        limit_up_fengdan_ratios_[timestamp] = current_ratio;
+    } else {
+        // 键存在，检查新值是否更大
+        if (current_ratio > it->second) {
+            it->second = current_ratio; // 更新值
+        }
+    }
 
     // 撤单策略1
     auto s1 = [&](){
-        if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.2) {
+        if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.15) {
 
             // 放发生交易请求的部分
             sendServer_ref_.send(formatStockAccount(
@@ -731,15 +740,34 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             ));
             is_send_ = true;
 
-            LOG_WARN(module_name, "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
+            LOG_WARN(module_name, 
+                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
                 symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp);
         }
     };
 
-    // 9:19:50 - 9:20:00 执行策略
-    // if (last_event_timestamp_ >= 33590000 && last_event_timestamp_ <= 33600000){
-    //     s1();
-    // }
-    s1();
+    // 撤单策略2
+    auto s2 = [&](){
+        if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.20) {
+
+            // 放发生交易请求的部分
+            sendServer_ref_.send(formatStockAccount(
+                symbol_, 
+                stockWithAccounts_ref_
+            ));
+            is_send_ = true;
+
+            LOG_WARN(module_name, 
+                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
+                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp);
+        }
+    };
+
+
+    if (last_event_timestamp_ >= 33300000 && last_event_timestamp_ <= 33600000){
+        s1();
+    } else if (last_event_timestamp_ >= 34200000){
+        s2();
+    }
 }
 
