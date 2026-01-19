@@ -14,7 +14,7 @@
 ---
 
 ## ✨ 核心特性
-*   ⚡ **极致性能**: 基于无锁并发队列（Lock-free Queue），实现单线程 10w+ events/s 处理能力。
+*   ⚡ **极致性能**: 基于无锁并发队列（Lock-free Queue），实现单线程 100w+ events/s 处理能力。
 *   🏗️ **精准建模**: 完整重构 L2 订单簿，支持实时市场深度（Market Depth）计算。
 *   🔗 **跨语言集成**: 通过 Windows 命名管道（Named Pipe）实现与 Python/Node.js 的无损实时通信。
 *   📥 **全场景数据**: 支持 TCP 实时订阅与 HTTP 历史数据下载，满足回测与实盘需求。
