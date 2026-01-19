@@ -303,3 +303,22 @@ struct MarketEvent {
     MarketEvent(const MarketSpot& m) : type(EventType::MARKET_SPOT), data(m) {}
 
 };
+
+struct DataMessage {
+    enum class MessageType { ORDER, TRADE, MARKET_SPOT };
+
+    std::string data_;
+    MessageType type_;
+
+    DataMessage() = default;
+    DataMessage(std::string data, MessageType type) 
+        : data_(std::move(data)), type_(type) {}
+};
+
+inline const std::string &getSymbol(const MarketEvent &evt) {
+  if (evt.type == MarketEvent::EventType::ORDER) {
+    return std::get<L2Order>(evt.data).symbol;
+  } else {
+    return std::get<L2Trade>(evt.data).symbol;
+  }
+}

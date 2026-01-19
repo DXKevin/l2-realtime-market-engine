@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "DataRouter.h"
 #include "concurrentqueue/blockingconcurrentqueue.h"
 #include "L2TcpSubscriber.h"
 #include "SendServer.h"
@@ -52,6 +53,7 @@ private:
     std::unique_ptr<L2TcpSubscriber> tradeSubscriber_; 
     std::unique_ptr<SendServer> sendServer_;
     std::unique_ptr<ReceiveServer> recvServer_;
+    std::unique_ptr<DataRouter> dataRouter_;
 
     // 重启标志物
     mutable std::atomic<bool> reset_requested_by_executor_{false};

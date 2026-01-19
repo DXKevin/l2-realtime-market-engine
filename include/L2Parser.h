@@ -45,7 +45,7 @@ struct L2FieldCount<L2Trade> {
 
 
 inline std::vector<MarketEvent> parseL2Data(
-    std::string_view data, std::string_view type, 
+    std::string& data, DataMessage::MessageType type, 
     std::string& buffer_, AsyncFileWriter& asyncFileWriter_ref) {
     
     constexpr size_t ORDER_FIELDS  = L2FieldCount<L2Order>::field_num;
@@ -54,7 +54,7 @@ inline std::vector<MarketEvent> parseL2Data(
     std::vector<MarketEvent> event_list;
     size_t pos = 0;
     
-    buffer_.append(data.data(), data.size());
+    buffer_.append(data);
     std::string_view buffer_view = buffer_;
 
     while (pos < buffer_.size()) {
@@ -62,7 +62,7 @@ inline std::vector<MarketEvent> parseL2Data(
         size_t open = buffer_view.find('<', pos);
         if (open == std::string_view::npos) {
             buffer_.clear(); // 没有找到 '<'，清空缓冲区
-            buffer_.append(data.data(), data.size()); // 保留未处理数据
+            buffer_.append(data); // 保留未处理数据
             
             LOG_WARN("L2Parser", "无法找到 '<', 丢弃缺失数据, 保留新缓冲区数据: {}", buffer_);
             return event_list;
@@ -87,7 +87,7 @@ inline std::vector<MarketEvent> parseL2Data(
         auto splitfunc = [&](std::string_view order_part){
             if (!order_part.empty()) {
                 auto fields = splitByComma(order_part);
-                if (type == "order"){
+                if (type == DataMessage::MessageType::ORDER){
                     if (fields.size() == ORDER_FIELDS) {
                         MarketEvent event{L2Order(fields)};
                         event_list.push_back(event);
@@ -100,7 +100,7 @@ inline std::vector<MarketEvent> parseL2Data(
                         LOG_WARN("L2Parser", "buffer_:{}, open:{}, length:{}", buffer_, open, close-open-1);
                         LOG_WARN("L2Parser", "order字段数不匹配, data:{}", full_record);
                     }
-                } else if (type == "trade"){
+                } else if (type == DataMessage::MessageType::TRADE){
                     if (fields.size() == TRADE_FIELDS) {
                         MarketEvent event{L2Trade(fields)};
                         event_list.push_back(event);

@@ -57,6 +57,12 @@ void Executor::init() {
         moodycamel::BlockingConcurrentQueue<std::string>
     >();
 
+    // 初始化数据路由器
+    dataRouter_ = std::make_unique<DataRouter>(
+        *orderBooks_,
+        *asyncFileWriter_
+    );
+
     // 初始化交易信号发送服务器
     sendServer_ = std::make_unique<SendServer>("to_python_pipe");
 
@@ -74,18 +80,16 @@ void Executor::init() {
         order_port_, 
         username_, 
         password_, 
-        "order", 
-        *orderBooks_,
-        *asyncFileWriter_
+        DataMessage::MessageType::ORDER,
+        *dataRouter_
     );
     tradeSubscriber_ = std::make_unique<L2TcpSubscriber>(
         tcp_host_, 
         trade_port_, 
         username_, 
         password_, 
-        "trade", 
-        *orderBooks_,
-        *asyncFileWriter_
+        DataMessage::MessageType::TRADE,
+        *dataRouter_
     );
 
     // 初始化接收前端消息服务器
@@ -93,6 +97,7 @@ void Executor::init() {
         "from_nodejs_pipe", 
         *monitorEventQueue_
     );
+
 
     downloader_->run();
     orderSubscriber_->run();
