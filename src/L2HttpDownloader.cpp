@@ -147,9 +147,11 @@ std::string L2HttpDownloader::download(const std::string& symbol, const std::str
     std::string result(decompressed.begin(), decompressed.end());
 
     if (type == "Order") {
-        writeTxtFile("data/http_order_data.txt", result);
+        std::string filename = "data/" + symbol + "_order_http.txt";
+        writeTxtFile(filename, result);
     } else if (type == "Tran") {
-        writeTxtFile("data/http_trade_data.txt", result);
+        std::string filename = "data/" + symbol + "_tran_http.txt";
+        writeTxtFile(filename, result);
     }
     
     return result;
