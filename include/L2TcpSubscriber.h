@@ -10,6 +10,7 @@
 #include <ws2tcpip.h>
 
 #include "OrderBook.h"
+#include "AsyncFileWriter.h"
 
 class L2TcpSubscriber {
 public:
@@ -19,7 +20,8 @@ public:
         const std::string& username,
         const std::string& password,
         const std::string& type,
-        std::unordered_map<std::string, std::unique_ptr<OrderBook>>& orderBooks_ref
+        std::unordered_map<std::string, std::unique_ptr<OrderBook>>& orderBooks_ref,
+        AsyncFileWriter& asyncFileWriter_ref
     );
 
     ~L2TcpSubscriber();
@@ -68,6 +70,7 @@ private:
     std::string password_;
     std::string type_;
     std::unordered_map<std::string, std::unique_ptr<OrderBook>>& orderBooks_ref_;
+    AsyncFileWriter& asyncFileWriter_ref_;
 
     std::atomic<bool> running_;
     SOCKET sock_;

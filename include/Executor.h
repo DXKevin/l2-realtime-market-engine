@@ -12,6 +12,7 @@
 #include "ReceiveServer.h"
 #include "OrderBook.h"
 #include "AutoSaveJsonMap.hpp"
+#include "AsyncFileWriter.h"
 
 class Executor {
 public:
@@ -40,6 +41,7 @@ private:
     std::string username_;
     std::string password_;
 
+    std::unique_ptr<AsyncFileWriter> asyncFileWriter_;
 
     std::unique_ptr<std::unordered_map<std::string, std::unique_ptr<OrderBook>>> orderBooks_;
     std::unique_ptr<AutoSaveJsonMap<std::string, std::vector<int>>> stockWithAccounts_;

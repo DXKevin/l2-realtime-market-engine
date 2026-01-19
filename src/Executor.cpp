@@ -8,6 +8,8 @@
 #include "ReceiveServer.h"
 #include "L2Parser.h"
 
+#include <memory>
+
 Executor::Executor() {
     
 }
@@ -41,6 +43,8 @@ void Executor::init() {
     username_ = config.get("auth", "username");
     password_ = config.get("auth", "password");
     
+    asyncFileWriter_ = std::make_unique<AsyncFileWriter>();
+
     orderBooks_ = std::make_unique<
         std::unordered_map<std::string, std::unique_ptr<OrderBook>>
     >();
@@ -71,7 +75,8 @@ void Executor::init() {
         username_, 
         password_, 
         "order", 
-        *orderBooks_
+        *orderBooks_,
+        *asyncFileWriter_
     );
     tradeSubscriber_ = std::make_unique<L2TcpSubscriber>(
         tcp_host_, 
@@ -79,7 +84,8 @@ void Executor::init() {
         username_, 
         password_, 
         "trade", 
-        *orderBooks_
+        *orderBooks_,
+        *asyncFileWriter_
     );
 
     // 初始化接收前端消息服务器
@@ -88,6 +94,7 @@ void Executor::init() {
         *monitorEventQueue_
     );
 
+    downloader_->run();
     orderSubscriber_->run();
     tradeSubscriber_->run();
 

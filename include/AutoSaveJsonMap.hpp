@@ -7,6 +7,7 @@
 
 #include "Logger.h"
 #include "nlohmann/json.hpp"
+#include "FileOperator.h"
 
 template<typename Key = std::string, typename Value = std::list<int>>
 class AutoSaveJsonMap {
@@ -14,8 +15,10 @@ public:
     using MapType = std::map<Key, Value>;
 
     // 构造函数：指定文件名，自动加载
-    explicit AutoSaveJsonMap(const std::string& filename = "stock_account.json")
+    explicit AutoSaveJsonMap(const std::string& filename)
         : filename_(filename) {
+        
+        deleteIfBeforeTimePeriod(filename_, 9, 10);
         load();
     }
 

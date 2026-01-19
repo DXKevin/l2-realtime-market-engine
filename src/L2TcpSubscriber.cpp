@@ -5,9 +5,11 @@
 #include <string_view>
 
 #include "DataStruct.h"
+#include "FileOperator.h"
 #include "L2Parser.h"
 #include "L2TcpSubscriber.h"
 #include "Logger.h"
+#include "AsyncFileWriter.h"
 
 static const char *module_name = "L2TcpSubscriber";
 
@@ -49,9 +51,10 @@ static WinSockInitializer g_winsockInit;
 L2TcpSubscriber::L2TcpSubscriber(
     const std::string &host, int port, const std::string &username,
     const std::string &password, const std::string &type,
-    std::unordered_map<std::string, std::unique_ptr<OrderBook>> &orderBooks_ref)
+    std::unordered_map<std::string, std::unique_ptr<OrderBook>> &orderBooks_ref,
+    AsyncFileWriter &asyncFileWriter_ref)
     : host_(host), port_(port), username_(username), password_(password),
-      type_(type), orderBooks_ref_(orderBooks_ref), running_(true),
+      type_(type), orderBooks_ref_(orderBooks_ref), asyncFileWriter_ref_(asyncFileWriter_ref), running_(true),
       is_logined_(false), sock_(INVALID_SOCKET) {}
 
 L2TcpSubscriber::~L2TcpSubscriber() { stop(); }
@@ -198,6 +201,8 @@ std::string L2TcpSubscriber::recvData() {
   char buffer[8192] = {0};
   int n = recv(sock_, buffer, sizeof(buffer) - 1, 0);
 
+  // LOG_INFO(module_name, "接收行情数据: {}", std::string(buffer, n));
+
   if (n == SOCKET_ERROR) {
     int err = WSAGetLastError();
     LOG_ERROR(module_name, "TCP 接收数据出现错误 <{}:{}>，错误码: {}", host_,
@@ -212,18 +217,13 @@ std::string L2TcpSubscriber::recvData() {
 
   if (isContainStrFlag(buffer, n, "DY2,0")) {
     LOG_INFO(module_name, "订阅成功, 返回信息:{}", std::string(buffer, n));
-    return "1";
   }
 
-  if (isContainStrFlag(buffer, n, "HeartBeat")) {
-    return "1";
-  }
+  // if (isContainStrFlag(buffer, n, "HeartBeat")) {}
 
-  if (isContainStrFlag(buffer, n, "successful") ||
-      isContainStrFlag(buffer, n, "Order") ||
-      isContainStrFlag(buffer, n, "Tran")) {
-    return "1";
-  }
+  // if (isContainStrFlag(buffer, n, "successful") ||
+  //     isContainStrFlag(buffer, n, "Order") ||
+  //     isContainStrFlag(buffer, n, "Tran")) {}
 
   return std::string(buffer, n);
 }
@@ -270,14 +270,10 @@ void L2TcpSubscriber::receiveLoop() {
       break;                    // 退出接收循环，回到 connectLoop 继续尝试
     }
 
-    if (data == "1") {
-      continue;
-    }
-
     // LOG_INFO(module_name, "接收行情数据: {}", data);
 
     // 处理行情数据
-    auto events = parseL2Data(data, type_, buffer_);
+    auto events = parseL2Data(data, type_, buffer_, asyncFileWriter_ref_);
     for (const auto &event : events) {
       const std::string &symbol = getSymbol(event);
       auto it = orderBooks_ref_.find(symbol);

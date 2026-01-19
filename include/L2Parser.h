@@ -1,6 +1,5 @@
 // L2Parser.h
 #pragma once
-
 #include <string>
 #include <string_view>
 #include <vector>
@@ -8,8 +7,8 @@
 
 #include "Logger.h"
 #include "DataStruct.h"
-#include "FileOperator.h"
 #include "AutoSaveJsonMap.hpp"
+#include "AsyncFileWriter.h"
 
 
 // 辅助函数：按 ',' 分割 string_view（不支持转义）
@@ -29,7 +28,6 @@ inline std::vector<std::string_view> splitByComma(std::string_view str) {
     return tokens;
 }
 
-
 template<typename T>
 struct L2FieldCount {
     static constexpr size_t field_num = 0; // 默认值
@@ -47,7 +45,9 @@ struct L2FieldCount<L2Trade> {
 
 
 inline std::vector<MarketEvent> parseL2Data(
-    std::string_view data, std::string_view type, std::string& buffer_) {
+    std::string_view data, std::string_view type, 
+    std::string& buffer_, AsyncFileWriter& asyncFileWriter_ref) {
+    
     constexpr size_t ORDER_FIELDS  = L2FieldCount<L2Order>::field_num;
     constexpr size_t TRADE_FIELDS  = L2FieldCount<L2Trade>::field_num;
 
@@ -89,14 +89,25 @@ inline std::vector<MarketEvent> parseL2Data(
                 auto fields = splitByComma(order_part);
                 if (type == "order"){
                     if (fields.size() == ORDER_FIELDS) {
-                        event_list.emplace_back(L2Order(fields));
+                        MarketEvent event{L2Order(fields)};
+                        event_list.push_back(event);
+
+                        std::string symbol = std::get<L2Order>(event.data).symbol;
+                        std::string path = "data/" + symbol + "_order_tcp.txt";
+                        asyncFileWriter_ref.write_async(path, std::string(order_part));
+
                     } else {
                         LOG_WARN("L2Parser", "buffer_:{}, open:{}, length:{}", buffer_, open, close-open-1);
                         LOG_WARN("L2Parser", "order字段数不匹配, data:{}", full_record);
                     }
                 } else if (type == "trade"){
                     if (fields.size() == TRADE_FIELDS) {
-                        event_list.emplace_back(L2Trade(fields));
+                        MarketEvent event{L2Trade(fields)};
+                        event_list.push_back(event);
+
+                        std::string symbol = std::get<L2Trade>(event.data).symbol;
+                        std::string path = "data/" + symbol + "_trade_tcp.txt";
+                        asyncFileWriter_ref.write_async(path, std::string(order_part));
                     } else {
                         LOG_WARN("L2Parser", "buffer_:{}, open:{}, length:{}", buffer_, open, close-open-1);
                         LOG_WARN("L2Parser", "trade字段数不匹配, data:{}", full_record);
@@ -113,20 +124,28 @@ inline std::vector<MarketEvent> parseL2Data(
                 }
 
                 std::string_view order_part = full_record.substr(start);
-                if (type == "order") {
-                    writeTxtFile("tcp_order_data.txt", std::string(order_part));
-                } else if (type == "trade") {
-                    writeTxtFile("tcp_trade_data.txt", std::string(order_part));
+
+                if (order_part.find("HeartBeat") != std::string_view::npos ||
+                    order_part.find("DY2") != std::string_view::npos ||
+                    order_part.find("Order") != std::string_view::npos ||
+                    order_part.find("Tran") != std::string_view::npos ||
+                    order_part.find("Login") != std::string_view::npos) {
+                    continue;
                 }
+
                 splitfunc(order_part);
                 break;
             } else {
                 std::string_view order_part = full_record.substr(start, end - start);
-                if (type == "order") {
-                    writeTxtFile("tcp_order_data.txt", std::string(order_part));
-                } else if (type == "trade") {
-                    writeTxtFile("tcp_trade_data.txt", std::string(order_part));
+
+                if (order_part.find("HeartBeat") != std::string_view::npos ||
+                    order_part.find("DY2") != std::string_view::npos ||
+                    order_part.find("Order") != std::string_view::npos ||
+                    order_part.find("Tran") != std::string_view::npos ||
+                    order_part.find("Login") != std::string_view::npos) {
+                    continue;
                 }
+
                 splitfunc(order_part);
                 start = end + 1;  // 跳过 '#'
             }

@@ -97,7 +97,7 @@ void OrderBook::runProcessingLoop() {
             if (!history_event_queue.wait_dequeue_timed(hist_evt, std::chrono::milliseconds(3000)) &&
              is_history_event_queue_done_.load() == false) {
                 if (isHistoryDataLoadingComplete()) {
-                    // 历史数据接受完毕，对订单进行事件排序
+                    // 历史数据接受完毕，对订单进行事件排序, 排序是为了保证回溯时候指标的正确触发
                     std::sort(history_event_buffer_.begin(), history_event_buffer_.end(), [](const MarketEvent& a, const MarketEvent& b) {
                         int timestamp_a = (a.type == MarketEvent::EventType::ORDER) ? std::get<L2Order>(a.data).timestamp : std::get<L2Trade>(a.data).timestamp;
                         int timestamp_b = (b.type == MarketEvent::EventType::ORDER) ? std::get<L2Order>(b.data).timestamp : std::get<L2Trade>(b.data).timestamp;
@@ -151,7 +151,7 @@ void OrderBook::runProcessingLoop() {
             is_history_event_buffer_done_.store(true);
             generateDuplicateSets();
 
-            printOrderBook(10);
+            // printOrderBook(10);
 
             LOG_INFO(module_name, "历史事件处理完毕，开始处理实时事件队列...");
             
@@ -584,6 +584,14 @@ void OrderBook::printOrderBook(int level_num) const {
     //     break;
     // }
 
+    // for (auto it = bids_.rbegin(); it != bids_.rend(); ++it) {
+    //     for (const auto& order_ref : it->second) {
+    //         LOG_INFO(module_name, "买盘订单 - ID: {}, 价格: {}, 数量: {}, 方向: {}", 
+    //             order_ref.id, order_ref.price / 10000.0, order_ref.volume, order_ref.side);
+    //     }
+    //     break;
+    // }
+
     // if (last_event_timestamp_ >= 41392860) {
     //     auto it = bids_.find(235500);
     //     if (it != bids_.end()) {
@@ -602,15 +610,15 @@ void OrderBook::printOrderBook(int level_num) const {
     //     LOG_INFO(module_name, "等待撤单事件 - ID: {}", it->first);
     // }
 
-    LOG_INFO(module_name, "买盘价格订单总数量 {}", total_bid_list_size);
-    LOG_INFO(module_name, "卖盘价格订单总数量 {}", total_ask_list_size);
-    LOG_INFO(module_name, "历史事件去重集合大小: {}", history_order_id_.size());
+    // LOG_INFO(module_name, "买盘价格订单总数量 {}", total_bid_list_size);
+    // LOG_INFO(module_name, "卖盘价格订单总数量 {}", total_ask_list_size);
+    // LOG_INFO(module_name, "历史事件去重集合大小: {}", history_order_id_.size());
     LOG_INFO(module_name, "等待成交事件队列大小: {}", pending_trade_events_.size());
     LOG_INFO(module_name, "等待撤单事件队列大小: {}", pending_cancel_events_.size());
-    LOG_INFO(module_name, "订单索引大小: {}", order_index_.size());
-    LOG_INFO(module_name, "买盘档位数量: {}", bids_.size());
-    LOG_INFO(module_name, "卖盘档位数量: {}", asks_.size());
-    LOG_INFO(module_name, "历史涨停封单比例数量: {}", limit_up_fengdan_ratios_.size());
+    // LOG_INFO(module_name, "订单索引大小: {}", order_index_.size());
+    // LOG_INFO(module_name, "买盘档位数量: {}", bids_.size());
+    // LOG_INFO(module_name, "卖盘档位数量: {}", asks_.size());
+    // LOG_INFO(module_name, "历史涨停封单比例数量: {}", limit_up_fengdan_ratios_.size());
     LOG_INFO(module_name, "最后订单时间: {}", last_event_timestamp_);
     LOG_INFO(module_name, "=========================================");
 }
@@ -741,8 +749,8 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             is_send_ = true;
 
             LOG_WARN(module_name, 
-                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
-                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp);
+                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
+                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
 
@@ -758,8 +766,8 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             is_send_ = true;
 
             LOG_WARN(module_name, 
-                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前时间: {}", 
-                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp);
+                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
+                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
 
