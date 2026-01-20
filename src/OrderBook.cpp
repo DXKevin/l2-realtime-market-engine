@@ -756,7 +756,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
 
     // 撤单策略2
     auto s2 = [&](){
-        if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.20) {
+        if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.15) {
 
             // 放发生交易请求的部分
             sendServer_ref_.send(formatStockAccount(
