@@ -40,7 +40,7 @@ inline void writeTxtFile(const std::string& filePath, const std::string& content
         LOG_ERROR("WriteFile", "无法打开文件: {}", filePath);
         return;
     }
-    outfile << content << std::endl;
+    outfile << content;
     outfile.close();
 }
 
