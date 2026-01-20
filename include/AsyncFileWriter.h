@@ -25,7 +25,7 @@ private:
     void perform_write(const std::string& filename, const std::string& content) {
         std::ofstream file(filename, std::ios::app);
         if (file.is_open()) {
-            file << content;
+            file << content << "\n";
             file.close();
         } else {
             LOG_ERROR("AsyncFileWriter", "无法打开文件 {} 进行写入", filename);

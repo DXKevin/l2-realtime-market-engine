@@ -1,5 +1,6 @@
 #include "DataRouter.h"
 #include "L2Parser.h"
+#include "Logger.h"
 
 
 
@@ -27,9 +28,9 @@ void DataRouter::worker() {
     while (running_) {
         DataMessage data_message;
         eventQueue_.wait_dequeue(data_message);
-        
+
         auto events = parseL2Data(data_message.data_, data_message.type_, buffer_, asyncFileWriter_ref_);
-        
+
         for (const auto &event : events) {
             const std::string &symbol = getSymbol(event);
             auto it = orderBooks_ref_.find(symbol);

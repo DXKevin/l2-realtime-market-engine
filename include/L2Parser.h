@@ -47,7 +47,7 @@ struct L2FieldCount<L2Trade> {
 inline std::vector<MarketEvent> parseL2Data(
     std::string& data, DataMessage::MessageType type, 
     std::string& buffer_, AsyncFileWriter& asyncFileWriter_ref) {
-    
+
     constexpr size_t ORDER_FIELDS  = L2FieldCount<L2Order>::field_num;
     constexpr size_t TRADE_FIELDS  = L2FieldCount<L2Trade>::field_num;
 
@@ -130,7 +130,7 @@ inline std::vector<MarketEvent> parseL2Data(
                     order_part.find("Order") != std::string_view::npos ||
                     order_part.find("Tran") != std::string_view::npos ||
                     order_part.find("Login") != std::string_view::npos) {
-                    continue;
+                    break;
                 }
 
                 splitfunc(order_part);
@@ -143,7 +143,7 @@ inline std::vector<MarketEvent> parseL2Data(
                     order_part.find("Order") != std::string_view::npos ||
                     order_part.find("Tran") != std::string_view::npos ||
                     order_part.find("Login") != std::string_view::npos) {
-                    continue;
+                    break;
                 }
 
                 splitfunc(order_part);
