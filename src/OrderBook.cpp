@@ -83,11 +83,6 @@ void OrderBook::generateDuplicateSets() {
 
 // 主线程循环
 void OrderBook::runProcessingLoop() {
-
-    int process_pending_events_count = 0;
-
-    int PROCESS_PENDING_EVENTS_INTERVAL = 100; // 每处理 100 笔事件处理一次待处理事件
-
     while (running_) {
         if (isHistoryDataLoadingComplete() == false
             || is_history_event_queue_done_.load() == false  
