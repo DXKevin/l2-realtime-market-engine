@@ -34,6 +34,11 @@ void Executor::stop() {
 void Executor::init() {
     module_name_ = "Executor";
 
+    // 检测是否在9：10分之后
+    while (!isL2ServerOnlineTime()) {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    }
+
     // 读取配置文件
     ConfigReader config("config.ini");
     http_url_ = config.get("server", "http_url");
@@ -148,6 +153,21 @@ void Executor::monitorEventLoop() {
 bool Executor::isLogined() {
     return orderSubscriber_->is_logined_ && 
             tradeSubscriber_->is_logined_;
+}
+
+bool Executor::isL2ServerOnlineTime() {
+    using namespace std::chrono;
+    auto now = system_clock::now();
+    auto now_c = system_clock::to_time_t(now);
+    std::tm now_tm = {};
+
+#ifdef _WIN32
+    localtime_s(&now_tm, &now_c);
+#else
+    localtime_r(&now_c, &now_tm);
+#endif
+
+    return (now_tm.tm_hour > 9) || (now_tm.tm_hour == 9 && now_tm.tm_min >= 10);
 }
 
 void Executor::handleMonitorEvent(const std::string& symbol) {

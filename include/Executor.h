@@ -29,6 +29,7 @@ private:
     void init();
     void monitorEventLoop();
 
+    bool isL2ServerOnlineTime();
     bool isLogined();
     void handleMonitorEvent(const std::string& event);
 
