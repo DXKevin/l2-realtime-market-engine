@@ -34,11 +34,6 @@ void Executor::stop() {
 void Executor::init() {
     module_name_ = "Executor";
 
-    // 检测是否在9：10分之后
-    while (!isL2ServerOnlineTime()) {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
-
     // 读取配置文件
     ConfigReader config("config.ini");
     http_url_ = config.get("server", "http_url");
@@ -103,12 +98,19 @@ void Executor::init() {
         *monitorEventQueue_
     );
 
+    LOG_INFO(module_name_, "程序初始化完成");
+
+    // 检测是否在9：10分之后
+    while (!isL2ServerOnlineTime()) {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        LOG_INFO(module_name_, "等待行情服务器上线...");
+    }
 
     downloader_->run();
     orderSubscriber_->run();
     tradeSubscriber_->run();
 
-    LOG_INFO(module_name_, "程序初始化完成");
+    
 }
 
 void Executor::monitorEventLoop() {
