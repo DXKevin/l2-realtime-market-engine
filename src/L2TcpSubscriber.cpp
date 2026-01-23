@@ -220,6 +220,8 @@ void L2TcpSubscriber::stop() {
   if (!running_)
     return;
 
+  LOG_INFO(module_name, "停止 L2TcpSubscriber");
+
   running_ = false;    // 停止所有循环
   is_logined_ = false; // 设置状态为未登录
 

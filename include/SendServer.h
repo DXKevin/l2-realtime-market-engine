@@ -13,6 +13,8 @@ public:
 
     bool send(const std::string& message); // 主动推送
 
+    void stop();
+
 private:
     std::string full_pipe_name_;
     std::thread server_thread_;

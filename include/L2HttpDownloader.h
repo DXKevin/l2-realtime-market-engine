@@ -43,5 +43,8 @@ private:
 
     std::thread loginThread_;
 
+
+    std::atomic<bool> running_{true};
+
     
 };

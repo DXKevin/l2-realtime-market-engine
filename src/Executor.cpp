@@ -25,7 +25,24 @@ void Executor::start() {
 }
 
 void Executor::stop() {
-    running_.store(false);
+    if (!running_.exchange(false)) {
+        return;
+    }
+
+    if (downloader_) downloader_->waitAll();
+    if (orderSubscriber_) orderSubscriber_->stop();
+    if (tradeSubscriber_) tradeSubscriber_->stop();
+    
+    if (recvServer_) recvServer_->stop();
+    if (dataRouter_) dataRouter_->stop();
+    
+    if (asyncFileWriter_) asyncFileWriter_->stop();
+    if (sendServer_) sendServer_->stop();
+
+    for (auto &orderBook : *orderBooks_) {
+        orderBook.second->stop();
+    }
+
     if (monitorEventThread_.joinable()) {
         monitorEventThread_.join();
     }
@@ -132,23 +149,26 @@ void Executor::monitorEventLoop() {
             handleMonitorEvent(symbol);
         }
 
-        // 等待前端监控消息 
-        while (isLogined()) { 
-            LOG_INFO(module_name_, "等待前端监控消息...");
-            std::string event;
-            monitorEventQueue_->wait_dequeue(event);
-            std::string symbol = parseAndStoreStockAccount(event, *stockWithAccounts_);
-            if (symbol.empty()) {
-                LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
-                continue;
-            }
+        LOG_INFO(module_name_, "等待前端监控消息...");
+        std::string event;
 
-            // 处理监控事件
-            handleMonitorEvent(symbol);
+        // 等待前端监控消息 
+        while (running_ && isLogined()) { 
+            if (monitorEventQueue_->wait_dequeue_timed(event, 1)) {
+                std::string symbol = parseAndStoreStockAccount(event, *stockWithAccounts_);
+                if (symbol.empty()) {
+                    LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
+                    continue;
+                }
+                // 处理监控事件
+                handleMonitorEvent(symbol);
+            }
         }
 
-        // 服务器登录断开，请求重启
-        requestReset();
+        if (!isLogined()) {
+            LOG_INFO(module_name_, "行情服务器断开连接，请求重启");
+            requestReset();
+        }
     }
 }
 

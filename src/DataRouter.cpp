@@ -16,8 +16,7 @@ DataRouter::DataRouter(
 }
 
 DataRouter::~DataRouter() {
-    running_ = false;
-    worker_thread_.join();
+    stop();
 }
 
 void DataRouter::pushData(const DataMessage& data_message) {
@@ -44,7 +43,15 @@ void DataRouter::worker() {
 }
 
 void DataRouter::stop() {
-    running_ = false;
+    if (!running_.exchange(false)) {
+        return;
+    }
+
+    LOG_INFO("DataRouter", "停止 DataRouter");
+
+    // 发空包，唤醒阻塞的线程
+    eventQueue_.enqueue(DataMessage{});
+    
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }

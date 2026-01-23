@@ -20,7 +20,7 @@ private:
 
     moodycamel::BlockingConcurrentQueue<WriteTask> task_queue; // 使用阻塞队列
     std::thread writer_thread;
-    std::atomic_bool running{true};
+    std::atomic_bool running_{true};
 
     void perform_write(const std::string& filename, const std::string& content) {
         std::ofstream file(filename, std::ios::app);
@@ -33,7 +33,7 @@ private:
     }
 
     void writer_loop() {
-        while (running) {
+        while (running_) {
             WriteTask task;
             task_queue.wait_dequeue(task);
 
@@ -59,8 +59,13 @@ public:
     }
 
     void stop() {
-        running.store(false);
+        if (!running_.exchange(false)) {
+            return;
+        }
+
+        LOG_INFO("AsyncFileWriter", "停止 AsyncFileWriter");
         task_queue.enqueue({});
+        
         if (writer_thread.joinable()) {
             writer_thread.join();
         }

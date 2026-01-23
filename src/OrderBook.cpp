@@ -39,15 +39,20 @@ void OrderBook::pushEvent(const MarketEvent& event) {
 
 void OrderBook::stop() {
     // exchange 设置 running_ 为 false, 并返回之前的值
-    if (running_.exchange(false)) {
-        event_queue.enqueue(MarketEvent{}); // 触发退出
-        if (processing_thread_.joinable()) {
-            processing_thread_.join();
-        }
+    if (!running_.exchange(false)) {
+        return;
+    }
 
-        if (print_thread_.joinable()) {
-            print_thread_.join();
-        }
+    LOG_INFO(module_name, "停止 OrderBook");
+
+    event_queue.enqueue(MarketEvent{}); // 触发退出
+
+    if (processing_thread_.joinable()) {
+        processing_thread_.join();
+    }
+
+    if (print_thread_.joinable()) {
+        print_thread_.join();
     }
 }
 

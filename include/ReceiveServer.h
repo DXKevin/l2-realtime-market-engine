@@ -13,6 +13,8 @@ public:
     );
     ~ReceiveServer();
 
+    void stop();
+
 private:
     std::string full_pipe_name_;
     std::thread server_thread_;

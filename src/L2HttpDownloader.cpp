@@ -75,7 +75,7 @@ void L2HttpDownloader::login() {
 }
 
 void L2HttpDownloader::loginLoop() {
-    while (true) {
+    while (running_) {
         if (!is_logined_.load()) {
             login();
         }   
@@ -238,6 +238,12 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
 }
 
 void L2HttpDownloader::waitAll() {
+    if (!running_.exchange(false)) {
+        return;
+    }
+
+    LOG_INFO("L2HttpDownloader", "停止 L2HttpDownloader");
+
     std::vector<std::future<void>> tasks;
     {
         std::lock_guard<std::mutex> lock(mtx_);

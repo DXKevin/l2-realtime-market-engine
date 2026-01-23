@@ -19,9 +19,11 @@ public:
             }
 
             if (running_ && executor_instance_->needsReset()) {
-                LOG_INFO("ExecutorManager", "Executor requested reset. Stopping current instance...");
+                LOG_INFO("ExecutorManager", "Executor is stopping...");
                 executor_instance_->stop(); // 停止当前实例
+                LOG_INFO("ExecutorManager", "Executor stopped.");
                 executor_instance_.reset(); // 销毁当前实例
+                LOG_INFO("ExecutorManager", "Executor reset.");
                 
                 // 添加延迟，避免频繁重启
                 std::this_thread::sleep_for(std::chrono::seconds(2));

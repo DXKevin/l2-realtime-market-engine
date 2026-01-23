@@ -13,7 +13,30 @@ SendServer::SendServer(const std::string& pipe_name)
 }
 
 SendServer::~SendServer() {
-    running_ = false;
+    stop();
+}
+
+void SendServer::stop() {
+    if (!running_.exchange(false)) {
+        return;
+    }
+
+    LOG_INFO("SendServer", "停止 SendServer");
+
+    HANDLE hClient = CreateFileA(
+        full_pipe_name_.c_str(),
+        GENERIC_READ,          // 客户端只需读（因为服务端是 OUTBOUND）
+        0, nullptr,
+        OPEN_EXISTING,
+        0, nullptr
+    );
+
+    if (hClient != INVALID_HANDLE_VALUE) {
+        // 连接成功即可，无需读写
+        CloseHandle(hClient);
+    }
+
+
     disconnectClient();
     if (server_thread_.joinable()) {
         server_thread_.join();
