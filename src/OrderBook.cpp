@@ -636,8 +636,14 @@ void OrderBook::printloop(int level_num) {
 
 // 检查涨停撤单情况
 void OrderBook::checkLimitUpWithdrawal(int timestamp) {
-    if (is_send_){
-        return; // 已经发送过警告, 不再重复发送
+    // 9:19:57之前不检查
+    if (last_event_timestamp_ < 33597000) {
+        return;
+    }
+
+    // 已经发送过警告, 不再重复发送
+    if (is_send_) {
+        return;
     }
 
     // 如果没有买盘则直接返回
@@ -698,10 +704,13 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         // LOG_INFO(module_name, "[{}] 创历史最高买一量: {}, 价格: {}", symbol_, max_bid_volume_, current_price / 10000.0);
         
         return; // 若发生更新, 肯定是买盘增加了, 直接返回
+    } else if (last_event_timestamp_ >= 33900000  && last_event_timestamp_ <= 33960000) {
+        // 9:25:00 ~ 9:26:00
+        max_bid_volume_ = fengdan_volume;
     }
 
     // 更新封单比例的时间窗口
-    int old_event_timestamp = last_event_timestamp_ - 5000;
+    int old_event_timestamp = last_event_timestamp_ - 3000;
     for (auto it = limit_up_fengdan_ratios_.begin(); it != limit_up_fengdan_ratios_.end(); ++it) {
         if (it->first > old_event_timestamp) {
             break;
@@ -770,7 +779,6 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
                 symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
-
 
     if (last_event_timestamp_ >= 33300000 && last_event_timestamp_ <= 33600000){
         s1();
