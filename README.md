@@ -40,12 +40,67 @@
 ## 🏗️ 系统架构
 ```mermaid
 graph TD
-    A[L2 Data Source] -->|TCP| B[L2TcpSubscriber]
-    A -->|HTTP| C[L2HttpDownloader]
-    B -->|Lock-free Queue| D[OrderBook Engine]
-    C -->|Batch Push| D
-    D -->|Real-time Signals| E[Named Pipe Server]
-    E -->|Signal Push| F[Python/Node.js Logic]
+    subgraph "External Sources"
+        L2_TCP[L2 TCP Data Source]
+        L2_HTTP[L2 HTTP Data Source]
+    end
+
+    subgraph "L2 Engine (C++)"
+        subgraph "Network Layer"
+            OrderTCP[Order TCP Subscriber<br/>ordertcp]
+            TradeTCP[Trade TCP Subscriber<br/>tradetcp]
+            HTTPDownloader[L2 HTTP Downloader]
+        end
+
+        DataRouter[Data Router<br/>datarouter]
+
+        subgraph "Business Logic (Multiple Instances)"
+            OB1[OrderBook: Stock A]
+            OB2[OrderBook: Stock B]
+            OBN[OrderBook: Stock N]
+        end
+
+        subgraph "IPC Servers"
+            ReceiveServer[Receive Server<br/>from Node.js]
+            SendServer[Send Server<br/>to Python]
+        end
+        
+        Executor[Executor Engine]
+    end
+
+    subgraph "Client Applications"
+        NodeJS[Node.js Frontend/Control]
+        Python[Python Strategy/Logic]
+    end
+
+    L2_TCP -->|Order Stream| OrderTCP
+    L2_TCP -->|Trade Stream| TradeTCP
+    L2_HTTP -->|History Data| HTTPDownloader
+
+    OrderTCP -->|Raw Data| DataRouter
+    TradeTCP -->|Raw Data| DataRouter
+    
+    DataRouter -->|Symbol Dispatch| OB1
+    DataRouter -->|Symbol Dispatch| OB2
+    DataRouter -->|Symbol Dispatch| OBN
+
+    HTTPDownloader -->|Historical Events| OB1
+    HTTPDownloader -->|Historical Events| OB2
+    HTTPDownloader -->|Historical Events| OBN
+
+    OB1 -->|Real-time Signals| SendServer
+    OB2 -->|Real-time Signals| SendServer
+    OBN -->|Real-time Signals| SendServer
+
+    SendServer -->|Named Pipe| Python
+    NodeJS -->|Named Pipe| ReceiveServer
+    
+    ReceiveServer -->|Monitor Events| Executor
+    Executor -->|Init/Subscribe| OrderTCP
+    Executor -->|Init/Subscribe| TradeTCP
+    Executor -->|Manage| OB1
+    Executor -->|Manage| OB2
+    Executor -->|Manage| OBN
 ```
 
 ---
