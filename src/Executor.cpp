@@ -154,7 +154,7 @@ void Executor::monitorEventLoop() {
 
         // 等待前端监控消息 
         while (running_ && isLogined()) { 
-            if (monitorEventQueue_->wait_dequeue_timed(event, 1)) {
+            if (monitorEventQueue_->wait_dequeue_timed(event, 1000)) {
                 std::string symbol = parseAndStoreStockAccount(event, *stockWithAccounts_);
                 if (symbol.empty()) {
                     LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
@@ -168,6 +168,7 @@ void Executor::monitorEventLoop() {
         if (!isLogined()) {
             LOG_INFO(module_name_, "行情服务器断开连接，请求重启");
             requestReset();
+            break;
         }
     }
 }
