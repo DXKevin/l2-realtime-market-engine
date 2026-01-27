@@ -18,7 +18,9 @@ public:
 private:
     void worker();
 
-    std::string buffer_; // 数据缓冲区, 用于存储拆包非完整数据
+    std::string order_buffer_; // 数据缓冲区, 用于存储拆包非完整数据
+    std::string trade_buffer_; // 数据缓冲区, 用于存储拆包非完整数据
+
     std::atomic<bool> running_;
     std::thread worker_thread_;
     moodycamel::BlockingConcurrentQueue<DataMessage> eventQueue_;

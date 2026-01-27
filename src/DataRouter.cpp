@@ -28,7 +28,12 @@ void DataRouter::worker() {
         DataMessage data_message;
         eventQueue_.wait_dequeue(data_message);
 
-        auto events = parseL2Data(data_message.data_, data_message.type_, buffer_, asyncFileWriter_ref_);
+        std::vector<MarketEvent> events;
+        if (data_message.type_ == DataMessage::MessageType::ORDER) {
+            events = parseL2Data(data_message.data_, data_message.type_, order_buffer_, asyncFileWriter_ref_);
+        } else if (data_message.type_ == DataMessage::MessageType::TRADE) {
+            events = parseL2Data(data_message.data_, data_message.type_, trade_buffer_, asyncFileWriter_ref_);
+        }
 
         for (const auto &event : events) {
             const std::string &symbol = getSymbol(event);
