@@ -73,7 +73,7 @@ inline std::vector<MarketEvent> parseL2Data(
         if (close == std::string_view::npos) {
             buffer_ = buffer_.substr(open); // 保留不完整部分
 
-            // LOG_WARN("L2Parser", "无法找到 '>', 保留不完整数据到缓冲区: {}", buffer_);
+            LOG_WARN("L2Parser", "无法找到 '>', 保留不完整数据到缓冲区: {}", buffer_);
             return event_list;
         }
         

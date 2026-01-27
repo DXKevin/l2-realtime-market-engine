@@ -143,11 +143,12 @@ void OrderBook::runProcessingLoop() {
                     timestamp = std::get<L2Trade>(it->data).timestamp;
                 }
 
-                // checkLimitUpWithdrawal(timestamp);   
+                checkLimitUpWithdrawal(timestamp);   
                 
             }
             std::vector<MarketEvent>().swap(history_event_buffer_);
 
+            is_send_.store(false);
             is_history_event_buffer_done_.store(true);
             generateDuplicateSets();
 
@@ -758,7 +759,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             is_send_ = true;
 
             LOG_WARN(module_name, 
-                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
+                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 3s 内封单比例下{}, 3s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
                 symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
@@ -775,7 +776,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             is_send_ = true;
 
             LOG_WARN(module_name, 
-                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 5s 内封单比例下{}, 5s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
+                "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 3s 内封单比例下{}, 3s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
                 symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
