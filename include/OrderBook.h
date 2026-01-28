@@ -58,6 +58,7 @@ private:
     std::string market_flag_;
     
     int max_bid_volume_ = 0; // 最大封单量
+    int fengdan_volume_ = 0; // 当前封单量
     int last_event_timestamp_ = 0; // 最后一笔事件的时间戳
 
     // 历史事件排序缓冲区

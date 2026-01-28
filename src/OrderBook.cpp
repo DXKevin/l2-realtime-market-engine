@@ -614,12 +614,15 @@ void OrderBook::printOrderBook(int level_num) const {
     // LOG_INFO(module_name, "买盘价格订单总数量 {}", total_bid_list_size);
     // LOG_INFO(module_name, "卖盘价格订单总数量 {}", total_ask_list_size);
     // LOG_INFO(module_name, "历史事件去重集合大小: {}", history_order_id_.size());
-    LOG_INFO(module_name, "等待成交事件队列大小: {}", pending_trade_events_.size());
-    LOG_INFO(module_name, "等待撤单事件队列大小: {}", pending_cancel_events_.size());
+    // LOG_INFO(module_name, "等待成交事件队列大小: {}", pending_trade_events_.size());
+    // LOG_INFO(module_name, "等待撤单事件队列大小: {}", pending_cancel_events_.size());
     // LOG_INFO(module_name, "订单索引大小: {}", order_index_.size());
     // LOG_INFO(module_name, "买盘档位数量: {}", bids_.size());
     // LOG_INFO(module_name, "卖盘档位数量: {}", asks_.size());
     // LOG_INFO(module_name, "历史涨停封单比例数量: {}", limit_up_fengdan_ratios_.size());
+
+    LOG_INFO(module_name, "当前封单量: {}", fengdan_volume_);
+    LOG_INFO(module_name, "最大封单量: {}", max_bid_volume_);
     LOG_INFO(module_name, "最后订单时间: {}", last_event_timestamp_);
     LOG_INFO(module_name, "=========================================");
 }
@@ -697,17 +700,17 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     }
 
     // 计算封单量
-    int fengdan_volume = best_bid_volume - total_ask_volume_at_or_below_best_bid;
+    fengdan_volume_ = best_bid_volume - total_ask_volume_at_or_below_best_bid;
 
     // 更新最大封单量
-    if (fengdan_volume > max_bid_volume_){
-        max_bid_volume_ = fengdan_volume;
+    if (fengdan_volume_ > max_bid_volume_){
+        max_bid_volume_ = fengdan_volume_;
         // LOG_INFO(module_name, "[{}] 创历史最高买一量: {}, 价格: {}", symbol_, max_bid_volume_, current_price / 10000.0);
         
         return; // 若发生更新, 肯定是买盘增加了, 直接返回
     } else if (last_event_timestamp_ >= 33900000  && last_event_timestamp_ <= 33960000) {
         // 9:25:00 ~ 9:26:00
-        max_bid_volume_ = fengdan_volume;
+        max_bid_volume_ = fengdan_volume_;
     }
 
     // 更新封单比例的时间窗口
@@ -721,7 +724,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     }
 
     // 计算当前封单比例
-    double current_ratio = (max_bid_volume_ > 0) ? static_cast<double>(fengdan_volume) / max_bid_volume_ : 0.0;
+    double current_ratio = (max_bid_volume_ > 0) ? static_cast<double>(fengdan_volume_) / max_bid_volume_ : 0.0;
     
     // 计算时间窗口内封单比例变化
     double ratio_change = 0.0;
@@ -760,7 +763,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
 
             LOG_WARN(module_name, 
                 "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 3s 内封单比例下{}, 3s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
-                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
+                symbol_, current_ratio, fengdan_volume_, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
 
@@ -777,7 +780,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
 
             LOG_WARN(module_name, 
                 "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 3s 内封单比例下{}, 3s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
-                symbol_, current_ratio, fengdan_volume, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
+                symbol_, current_ratio, fengdan_volume_, max_bid_volume_, ratio_change, max_ratio_in_window, timestamp, last_event_timestamp_);
         }
     };
 
