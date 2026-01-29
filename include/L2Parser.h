@@ -192,6 +192,7 @@ inline std::string parseAndStoreStockAccount(
     const std::string_view message,
     AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
 ) {
+    LOG_INFO("L2Parser", "收到消息: {}", message);
     if (message.size() < 3 || message.front() != '<' || message.back() != '>') {
         // 格式不合法
         LOG_WARN("L2Parser", "收到格式不合法的消息: {}", message);
@@ -208,17 +209,44 @@ inline std::string parseAndStoreStockAccount(
         return "";
     }
 
-    std::string_view symbol = content.substr(0, pos);
-    std::string_view accountsStr = content.substr(pos + 1);
+    std::string symbol = std::string(content.substr(0, pos));
+    std::string accountsStr = std::string(content.substr(pos + 1));
 
+    // 解析前端发来的账号组
     std::vector<int> result;
     auto accounts_views = splitByComma(accountsStr);
     for (const auto& acc_view : accounts_views) {
         result.emplace_back(svToInt(acc_view));
     }
 
-    // 如果有对各对象要
-    stockWithAccounts_ref.set(std::string(symbol), result); 
+    // 如果股票不存在，那么直接设置
+    if (!stockWithAccounts_ref.contains(symbol)) {
+        stockWithAccounts_ref.set(symbol, result); 
+        return symbol;
+    }
 
-    return std::string(symbol);
+    // 如果股票存在
+    // 如果result为空，那么清空
+    if (result.empty()) {
+        stockWithAccounts_ref.set(symbol, result); 
+        return symbol;
+    }
+
+    // 如果result不为空，那么合并非重复的账号
+    auto accounts_opt = stockWithAccounts_ref.get(symbol);
+    if (!accounts_opt) {
+        LOG_ERROR("L2Parser", "无法获取股票代码 {} 的账户信息", symbol);
+        return symbol;
+    }
+
+    auto& accounts = *accounts_opt;
+    for (const auto& acc : accounts) {
+        if (std::find(result.begin(), result.end(), acc) == result.end()) {
+            result.emplace_back(acc);
+        }
+    }
+
+    stockWithAccounts_ref.set(symbol, result); 
+
+    return symbol;
 }
