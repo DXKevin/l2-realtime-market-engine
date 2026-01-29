@@ -53,8 +53,8 @@ void ReceiveServer::runServer() {
                 break; // 退出循环
             }
 
-
-            monitorEventQueue_.enqueue(std::string(buffer, bytes_read));
+            LOG_INFO("ReceiveServer", "收到消息: {}", msg);
+            monitorEventQueue_.enqueue(msg);
         }
 
         CloseHandle(hPipe); // 短连接：处理完即关闭
