@@ -18,7 +18,8 @@ public:
     explicit OrderBook(
         const std::string symbol,
         SendServer& sendServer_ref,
-        AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
+        AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
+        AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref
     );
     ~OrderBook();
 
@@ -98,7 +99,8 @@ private:
     std::thread processing_thread_;
     std::thread print_thread_;
     std::atomic<bool> running_{true};
-    std::atomic<bool> is_send_{false};
+    std::atomic<bool> is_cancel_send_{false};
+    std::atomic<bool> is_sell_send_{false};
     std::atomic<bool> is_history_event_queue_done_{false};
     std::atomic<bool> is_history_event_buffer_done_{false};
     
@@ -107,5 +109,6 @@ private:
 
     // 外部关联数据
     SendServer& sendServer_ref_;
-    AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref_;
+    AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref_;
+    AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref_;
 };

@@ -46,7 +46,9 @@ private:
     std::unique_ptr<AsyncFileWriter> asyncFileWriter_;
 
     std::unique_ptr<std::unordered_map<std::string, std::unique_ptr<OrderBook>>> orderBooks_;
-    std::unique_ptr<AutoSaveJsonMap<std::string, std::vector<int>>> stockWithAccounts_;
+    std::unique_ptr<AutoSaveJsonMap<std::string, std::vector<int>>> cancelMonitorInfo_;
+    std::unique_ptr<AutoSaveJsonMap<std::string, std::unordered_map<int, int>>> sellMonitorInfo_;
+
     std::unique_ptr<moodycamel::BlockingConcurrentQueue<std::string>> monitorEventQueue_;
 
     std::unique_ptr<L2HttpDownloader> downloader_;

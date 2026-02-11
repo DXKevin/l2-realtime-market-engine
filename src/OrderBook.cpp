@@ -11,9 +11,13 @@ static const char* module_name = "OrderBook";
 OrderBook::OrderBook(
     const std::string symbol, 
     SendServer& sendServer_ref,
-    AutoSaveJsonMap<std::string, std::vector<int>>& stockWithAccounts_ref
+    AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
+    AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref
 ) : 
-    symbol_(symbol), sendServer_ref_(sendServer_ref), stockWithAccounts_ref_(stockWithAccounts_ref) {
+    symbol_(symbol), 
+    sendServer_ref_(sendServer_ref), 
+    cancelMonitorInfo_ref_(cancelMonitorInfo_ref), 
+    sellMonitorInfo_ref_(sellMonitorInfo_ref) {
 
     if (symbol_.empty()){
         LOG_ERROR(module_name, "OrderBook 无法用空股票代码初始化~");
@@ -148,7 +152,8 @@ void OrderBook::runProcessingLoop() {
             }
             std::vector<MarketEvent>().swap(history_event_buffer_);
 
-            is_send_.store(false);
+            is_cancel_send_ = false;
+            is_sell_send_ = false;
             is_history_event_buffer_done_.store(true);
             generateDuplicateSets();
 
@@ -645,11 +650,6 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         return;
     }
 
-    // 已经发送过警告, 不再重复发送
-    if (is_send_) {
-        return;
-    }
-
     // 如果没有买盘则直接返回
     if (bid_volume_at_price_.empty()) {
         return;
@@ -751,15 +751,20 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     }
 
     // 撤单策略1
-    auto s1 = [&](){
+    auto cancel_strategy_1 = [&](){
         if (max_bid_volume_ > 0 && current_ratio < (2.0 / 3.0) && ratio_change > 0.15) {
 
-            // 放发生交易请求的部分
-            sendServer_ref_.send(formatStockAccount(
+            if (is_cancel_send_) {
+                return;
+            }
+
+            // 发送撤单请求
+            sendServer_ref_.send(formatCancelMessage(
                 symbol_, 
-                stockWithAccounts_ref_
+                cancelMonitorInfo_ref_
             ));
-            is_send_ = true;
+
+            is_cancel_send_ = true;
 
             LOG_WARN(module_name, 
                 "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 2/3 且 3s 内封单比例下{}, 3s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
@@ -768,15 +773,19 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     };
 
     // 撤单策略2
-    auto s2 = [&](){
+    auto cancel_strategy_2 = [&](){
         if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.15) {
 
-            // 放发生交易请求的部分
-            sendServer_ref_.send(formatStockAccount(
+            if (is_cancel_send_) {
+                return;
+            }
+
+            // 发送撤单请求
+            sendServer_ref_.send(formatCancelMessage(
                 symbol_, 
-                stockWithAccounts_ref_
+                cancelMonitorInfo_ref_
             ));
-            is_send_ = true;
+            is_cancel_send_ = true;
 
             LOG_WARN(module_name, 
                 "[{}] 涨停撤单警告: 封单比例 {} --> 当前封单量 {} 低于历史最高封单量 {} 的 1/2 且 3s 内封单比例下{}, 3s最大封单比例:{}, 当前订单时间: {}, 最新订单时间: {}", 
@@ -785,9 +794,9 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     };
 
     if (last_event_timestamp_ >= 33300000 && last_event_timestamp_ <= 33600000){
-        s1();
+        cancel_strategy_1();
     } else if (last_event_timestamp_ >= 34200000){
-        s2();
+        cancel_strategy_2();
     }
 }
 

@@ -66,9 +66,14 @@ void Executor::init() {
         std::unordered_map<std::string, std::unique_ptr<OrderBook>>
     >();
 
-    stockWithAccounts_ = std::make_unique<
+    cancelMonitorInfo_ = std::make_unique<
         AutoSaveJsonMap<std::string, std::vector<int>>
-    >("stocks_monitor.json");
+    >("cancel_monitor.json");
+    
+    sellMonitorInfo_ = std::make_unique<
+        AutoSaveJsonMap<std::string, std::unordered_map<int, int>>
+    >("sell_monitor.json");
+    
 
     monitorEventQueue_ = std::make_unique<
         moodycamel::BlockingConcurrentQueue<std::string>
@@ -140,7 +145,11 @@ void Executor::monitorEventLoop() {
 
         // 获取所有监控的股票代码
         std::vector<std::string> symbols;
-        stockWithAccounts_->forEach([&symbols](const std::string& symbol, const auto&) {
+        cancelMonitorInfo_->forEach([&symbols](const std::string& symbol, const auto&) {
+            symbols.push_back(symbol);  // forEach 遍历时不能修改 map，否则会导致死锁, 所以先复制 key
+        });
+
+        sellMonitorInfo_->forEach([&symbols](const std::string& symbol, const auto&) {
             symbols.push_back(symbol);  // forEach 遍历时不能修改 map，否则会导致死锁, 所以先复制 key
         });
 
@@ -155,7 +164,7 @@ void Executor::monitorEventLoop() {
         // 等待前端监控消息 
         while (running_ && isLogined()) { 
             if (monitorEventQueue_->wait_dequeue_timed(event, 1000)) {
-                std::string symbol = parseAndStoreStockAccount(event, *stockWithAccounts_);
+                std::string symbol = parseAndStoreStockAccount(event, *cancelMonitorInfo_, *sellMonitorInfo_);
                 if (symbol.empty()) {
                     LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
                     continue;
@@ -176,6 +185,7 @@ void Executor::monitorEventLoop() {
 bool Executor::isLogined() {
     return orderSubscriber_->is_logined_ && 
             tradeSubscriber_->is_logined_;
+
 }
 
 bool Executor::isL2ServerOnlineTime() {
@@ -212,7 +222,8 @@ void Executor::handleMonitorEvent(const std::string& symbol) {
         std::make_unique<OrderBook>(
             symbol, 
             *sendServer_,
-            *stockWithAccounts_
+            *cancelMonitorInfo_,
+            *sellMonitorInfo_
         )
     );
 
