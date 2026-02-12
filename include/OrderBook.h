@@ -73,7 +73,10 @@ private:
 
     // 封单比例时间窗口
     std::map<int, double> limit_up_fengdan_ratios_;
-    
+
+    // 封单数量时间窗口
+    std::map<int, int> limit_up_fengdan_volumes_;
+
     // 价格 → 该档位总挂单量
     std::map<int, int> bid_volume_at_price_;
     std::map<int, int> ask_volume_at_price_;

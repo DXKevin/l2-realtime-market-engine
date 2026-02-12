@@ -723,6 +723,15 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         limit_up_fengdan_ratios_.erase(it);
     }
 
+    // 更新封单量的时间窗口
+    for (auto it = limit_up_fengdan_volumes_.begin(); it != limit_up_fengdan_volumes_.end(); ++it) {
+        if (it->first > old_event_timestamp) {
+            break;
+        }
+
+        limit_up_fengdan_volumes_.erase(it);
+    }
+
     // 计算当前封单比例
     double current_ratio = (max_bid_volume_ > 0) ? static_cast<double>(fengdan_volume_) / max_bid_volume_ : 0.0;
     
@@ -738,15 +747,39 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         ratio_change = max_ratio_in_window - current_ratio;
     }
 
+    // 计算时间窗口内封单量变化率
+    double volume_change_rate = 0.0;
+    int max_volume_in_window = 0;
+    if (!limit_up_fengdan_volumes_.empty()) {
+        for (const auto& [timestamp, volume] : limit_up_fengdan_volumes_) {
+            if (volume > max_volume_in_window) {
+                max_volume_in_window = volume;
+            }
+        }
+        volume_change_rate = (max_volume_in_window > 0) ? static_cast<double>(max_volume_in_window - fengdan_volume_) / max_volume_in_window : 0.0;
+    }
+
     // 记录当前封单比例
-    auto it = limit_up_fengdan_ratios_.find(timestamp);
-    if (it == limit_up_fengdan_ratios_.end()) {
+    auto it_ratio = limit_up_fengdan_ratios_.find(timestamp);
+    if (it_ratio == limit_up_fengdan_ratios_.end()) {
         // 键不存在，直接插入新键值对
         limit_up_fengdan_ratios_[timestamp] = current_ratio;
     } else {
         // 键存在，检查新值是否更大
-        if (current_ratio > it->second) {
-            it->second = current_ratio; // 更新值
+        if (current_ratio > it_ratio->second) {
+            it_ratio->second = current_ratio; // 更新值
+        }
+    }
+
+    // 记录当前封单量
+    auto it_volume = limit_up_fengdan_volumes_.find(timestamp);
+    if (it_volume == limit_up_fengdan_volumes_.end()) {
+        // 键不存在，直接插入新键值对
+        limit_up_fengdan_volumes_[timestamp] = fengdan_volume_;
+    } else {
+        // 键存在，检查新值是否更大
+        if (fengdan_volume_ > it_volume->second) {
+            it_volume->second = fengdan_volume_; // 更新值
         }
     }
 
@@ -793,10 +826,32 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         }
     };
 
+    // 卖出策略1
+    auto sell_strategy_1 = [&](){
+        if (max_bid_volume_ > 0 && volume_change_rate > 0.5) {
+
+            if (is_sell_send_) {
+                return;
+            }
+
+            // 发送撤单请求
+            sendServer_ref_.send(formatSellMessage(
+                symbol_, 
+                sellMonitorInfo_ref_
+            ));
+            is_sell_send_ = true;
+
+            LOG_WARN(module_name, 
+                "[{}] 涨停卖出警告: 3s内封单量变化率 {} > 0.5, 当前封单量:{}, 3s最大封单量:{}, 当前订单时间: {}, 最新订单时间: {}", 
+                symbol_, volume_change_rate, fengdan_volume_, max_volume_in_window, timestamp, last_event_timestamp_);
+        }
+    };
+
     if (last_event_timestamp_ >= 33300000 && last_event_timestamp_ <= 33600000){
         cancel_strategy_1();
     } else if (last_event_timestamp_ >= 34200000){
         cancel_strategy_2();
+        sell_strategy_1();
     }
 }
 
