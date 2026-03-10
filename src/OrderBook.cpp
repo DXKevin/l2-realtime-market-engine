@@ -807,7 +807,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
 
     // 撤单策略2
     auto cancel_strategy_2 = [&](){
-        if (max_bid_volume_ > 0 && current_ratio < (1.0 / 2.0) && ratio_change > 0.15) {
+        if (max_bid_volume_ > 0 && current_ratio < (13.0 / 20.0) && ratio_change > 0.15) {
 
             if (is_cancel_send_) {
                 return;
