@@ -394,7 +394,7 @@ void OrderBook::addOrder(const L2Order& order) {
     auto& book = (order.side == 1) ? bids_ : asks_;
     auto& list = book[order.price];
 
-    list.push_back({order.volume, order.price, order.side, order.id});
+    list.push_back({order.volume, order.price, order.side, order.id, order.timestamp});
     order_index_[order.id] = std::prev(list.end());
 
     auto& volume_map = (order.side == 1) ? bid_volume_at_price_ : ask_volume_at_price_;
@@ -630,6 +630,20 @@ void OrderBook::printOrderBook(int level_num) const {
     LOG_INFO(module_name, "最大封单量: {}", max_bid_volume_);
     LOG_INFO(module_name, "最后订单时间: {}", last_event_timestamp_);
     LOG_INFO(module_name, "=========================================");
+
+    std::string position_str;
+    if (!order_position_index_.empty()) {
+        for (size_t i = 0; i < order_position_index_.size(); ++i) {
+            position_str += std::to_string(order_position_index_[i]);
+
+            if (i < order_position_index_.size() - 1) {
+                position_str += "|";
+            }
+
+        }
+    }
+    LOG_INFO(module_name, "订单位置索引: {}", position_str);
+
 }
 
 // 循环打印
@@ -645,11 +659,6 @@ void OrderBook::printloop(int level_num) {
 
 // 检查涨停撤单情况
 void OrderBook::checkLimitUpWithdrawal(int timestamp) {
-    // 9:19:57之前不检查
-    if (last_event_timestamp_ < 33597000) {
-        return;
-    }
-
     // 如果没有买盘则直接返回
     if (bid_volume_at_price_.empty()) {
         return;
@@ -847,7 +856,36 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         }
     };
 
-    if (last_event_timestamp_ >= 33300000 && last_event_timestamp_ <= 33600000){
+    // 查找涨停板排单位置
+    auto find_order_in_queue = [&]() {
+        std::vector<int>().swap(order_position_index_);
+
+        int TIME_CUTOFF = 33303000;
+        int VOLUME_FLAG = 7900;
+
+        auto it = bids_.find(fake_limit_up_price);
+        if (it != bids_.end()){
+            std::list<OrderRef>& orders = it -> second;
+            
+            int idx = 0;
+            for (const auto& order : orders){
+                if (order.timestamp > TIME_CUTOFF) break;
+
+                if (order.volume == VOLUME_FLAG){
+                    order_position_index_.push_back(idx);
+                }
+
+                ++idx;
+            }
+        }
+    };
+
+
+    find_order_in_queue();
+
+    
+    if (last_event_timestamp_ >= 33597000 && last_event_timestamp_ <= 33600000){
+        // 9:19:57 ~ 9:20:00 执行撤单策略一
         cancel_strategy_1();
     } else if (last_event_timestamp_ >= 34200000){
         cancel_strategy_2();

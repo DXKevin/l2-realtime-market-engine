@@ -53,6 +53,7 @@ private:
         int price;
         int side;
         int id;
+        int timestamp;
     };
     
     std::string symbol_;
@@ -76,6 +77,9 @@ private:
 
     // 封单数量时间窗口
     std::map<int, int> limit_up_fengdan_volumes_;
+
+    // 排单位置号序列
+    std::vector<int> order_position_index_;
 
     // 价格 → 该档位总挂单量
     std::map<int, int> bid_volume_at_price_;
