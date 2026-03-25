@@ -626,11 +626,6 @@ void OrderBook::printOrderBook(int level_num) const {
     // LOG_INFO(module_name, "卖盘档位数量: {}", asks_.size());
     // LOG_INFO(module_name, "历史涨停封单比例数量: {}", limit_up_fengdan_ratios_.size());
 
-    LOG_INFO(module_name, "当前封单量: {}", fengdan_volume_);
-    LOG_INFO(module_name, "最大封单量: {}", max_bid_volume_);
-    LOG_INFO(module_name, "最后订单时间: {}", last_event_timestamp_);
-    LOG_INFO(module_name, "=========================================");
-
     std::string position_str;
     if (!order_position_index_.empty()) {
         for (size_t i = 0; i < order_position_index_.size(); ++i) {
@@ -642,7 +637,12 @@ void OrderBook::printOrderBook(int level_num) const {
 
         }
     }
+    
     LOG_INFO(module_name, "订单位置索引: {}", position_str);
+    LOG_INFO(module_name, "当前封单量: {}", fengdan_volume_);
+    LOG_INFO(module_name, "最大封单量: {}", max_bid_volume_);
+    LOG_INFO(module_name, "最后订单时间: {}", last_event_timestamp_);
+    LOG_INFO(module_name, "=========================================");
 
 }
 
@@ -860,8 +860,8 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
     auto find_order_in_queue = [&]() {
         std::vector<int>().swap(order_position_index_);
 
-        int TIME_CUTOFF = 33303000;
-        int VOLUME_FLAG = 7900;
+        int TIME_CUTOFF = 33301000;
+        int VOLUME_FLAG = 91100;
 
         auto it = bids_.find(fake_limit_up_price);
         if (it != bids_.end()){
