@@ -17,6 +17,7 @@ class OrderBook {
 public:
     explicit OrderBook(
         const std::string symbol,
+        const int vol_flag,
         SendServer& sendServer_ref,
         AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
         AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref
@@ -58,6 +59,8 @@ private:
     
     std::string symbol_;
     std::string market_flag_;
+
+    int vol_flag_ = 0; // 用于识别订单排位的数量标记
     
     int max_bid_volume_ = 0; // 最大封单量
     int fengdan_volume_ = 0; // 当前封单量

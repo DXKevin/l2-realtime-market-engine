@@ -42,6 +42,7 @@ private:
     int trade_port_;
     std::string username_;
     std::string password_;
+    int vol_flag_;
 
     std::unique_ptr<AsyncFileWriter> asyncFileWriter_;
 

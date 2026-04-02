@@ -59,6 +59,7 @@ void Executor::init() {
     trade_port_ = config.getInt("server", "trade_port");
     username_ = config.get("auth", "username");
     password_ = config.get("auth", "password");
+    vol_flag_ = config.getInt("server", "vol_flag");
     
     asyncFileWriter_ = std::make_unique<AsyncFileWriter>();
 
@@ -221,6 +222,7 @@ void Executor::handleMonitorEvent(const std::string& symbol) {
         symbol, 
         std::make_unique<OrderBook>(
             symbol, 
+            vol_flag_,
             *sendServer_,
             *cancelMonitorInfo_,
             *sellMonitorInfo_

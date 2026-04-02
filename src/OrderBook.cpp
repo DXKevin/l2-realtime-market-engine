@@ -9,12 +9,14 @@
 static const char* module_name = "OrderBook";
 
 OrderBook::OrderBook(
-    const std::string symbol, 
+    const std::string symbol,
+    const int vol_flag,
     SendServer& sendServer_ref,
     AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
     AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref
 ) : 
     symbol_(symbol), 
+    vol_flag_(vol_flag),
     sendServer_ref_(sendServer_ref), 
     cancelMonitorInfo_ref_(cancelMonitorInfo_ref), 
     sellMonitorInfo_ref_(sellMonitorInfo_ref) {
@@ -861,7 +863,6 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         std::vector<int>().swap(order_position_index_);
 
         int TIME_CUTOFF = 33301000;
-        int VOLUME_FLAG = 91100;
 
         auto it = bids_.find(fake_limit_up_price);
         if (it != bids_.end()){
@@ -871,7 +872,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             for (const auto& order : orders){
                 if (order.timestamp > TIME_CUTOFF) break;
 
-                if (order.volume == VOLUME_FLAG){
+                if (order.volume == vol_flag_){
                     order_position_index_.push_back(idx);
                 }
 
