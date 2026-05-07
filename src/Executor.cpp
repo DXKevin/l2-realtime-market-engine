@@ -74,8 +74,11 @@ void Executor::init() {
     sellMonitorInfo_ = std::make_unique<
         AutoSaveJsonMap<std::string, std::unordered_map<int, int>>
     >("sell_monitor.json");
-    
 
+    queueMonitorInfo_ = std::make_unique<
+        AutoSaveJsonMap<std::string, std::vector<int>>
+    >("queue_monitor.json");
+    
     monitorEventQueue_ = std::make_unique<
         moodycamel::BlockingConcurrentQueue<std::string>
     >();
@@ -88,6 +91,9 @@ void Executor::init() {
 
     // 初始化交易信号发送服务器
     sendServer_ = std::make_unique<SendServer>("to_python_pipe");
+
+    // 初始化队列信息发送服务器
+    queueSendServer_ = std::make_unique<SendServer>("cpp_to_nodejs_pipe");
 
     // 初始化HTTP下载器
     downloader_ = std::make_unique<L2HttpDownloader>(
@@ -154,6 +160,10 @@ void Executor::monitorEventLoop() {
             symbols.push_back(symbol);  // forEach 遍历时不能修改 map，否则会导致死锁, 所以先复制 key
         });
 
+        queueMonitorInfo_->forEach([&symbols](const std::string& symbol, const auto&) {
+            symbols.push_back(symbol);  // forEach 遍历时不能修改 map，否则会导致死锁, 所以先复制 key
+        });
+
         // 初始化本地历史监控任务
         for (const std::string& symbol : symbols) {
             handleMonitorEvent(symbol);
@@ -165,7 +175,7 @@ void Executor::monitorEventLoop() {
         // 等待前端监控消息 
         while (running_ && isLogined()) { 
             if (monitorEventQueue_->wait_dequeue_timed(event, 1000)) {
-                std::string symbol = parseAndStoreStockAccount(event, *cancelMonitorInfo_, *sellMonitorInfo_);
+                std::string symbol = parseAndStoreStockAccount(event, *cancelMonitorInfo_, *sellMonitorInfo_, *queueMonitorInfo_);
                 if (symbol.empty()) {
                     LOG_WARN(module_name_, "从前端消息解析出股票代码为空: {}", event);
                     continue;
@@ -205,9 +215,6 @@ bool Executor::isL2ServerOnlineTime() {
 }
 
 void Executor::handleMonitorEvent(const std::string& symbol) {
-    
-
-
     if (!isLogined()) {
         LOG_WARN(module_name_, "未登录行情服务器，跳过处理股票代码 {} 的监控事件", symbol);
         return;
@@ -224,8 +231,10 @@ void Executor::handleMonitorEvent(const std::string& symbol) {
             symbol, 
             vol_flag_,
             *sendServer_,
+            *queueSendServer_,
             *cancelMonitorInfo_,
-            *sellMonitorInfo_
+            *sellMonitorInfo_,
+            *queueMonitorInfo_
         )
     );
 

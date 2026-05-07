@@ -24,4 +24,6 @@ private:
 
     void runServer();
     void disconnectClient();
+    void disconnectClientUnsafe();
+    bool writeUnsafe(const std::string& message);
 };

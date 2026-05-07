@@ -1,6 +1,7 @@
 #include "SendServer.h"
 #include "Logger.h"
 
+#include <synchapi.h>
 #include <windows.h>
 
 
@@ -36,7 +37,6 @@ void SendServer::stop() {
         CloseHandle(hClient);
     }
 
-
     disconnectClient();
     if (server_thread_.joinable()) {
         server_thread_.join();
@@ -65,16 +65,28 @@ void SendServer::runServer() {
         }
         
         LOG_INFO("SendServer", "等待客户端连接到管道: " + full_pipe_name_);
-        // 等待客户端（Python）连接
-        if (!ConnectNamedPipe(hPipe, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) {
-            LOG_ERROR("SendServer", "ConnectNamedPipe failed.");
+        
+        // 等待客户端连接
+        BOOL connected = ConnectNamedPipe(hPipe, nullptr);
 
+        if (!connected) {
+            DWORD err = GetLastError();
+
+            if (err != ERROR_PIPE_CONNECTED) {
+                LOG_ERROR("SendServer", "ConnectNamedPipe failed, error: " + std::to_string(err));
+                CloseHandle(hPipe);
+                Sleep(500);
+                continue;
+            }
+        }
+
+        if (!running_) {
             CloseHandle(hPipe);
-            Sleep(500);
-            continue;
+            break;
         }
 
         LOG_INFO("SendServer", "客户端已连接到管道: " + full_pipe_name_);
+
         // 保存连接句柄
         EnterCriticalSection(&mutex_);
         client_handle_ = hPipe;
@@ -82,57 +94,85 @@ void SendServer::runServer() {
 
         // 保持连接，同时检测客户端是否断开
         while (running_) {
-            // 检测客户端是否断开 - 尝试写入0字节（轻量心跳）
-            DWORD bytes_written;
+            bool ok = false;
+            EnterCriticalSection(&mutex_);
 
-            std::string message = "<HeartBeat>";
-            BOOL result = WriteFile(hPipe, message.c_str(), (DWORD)message.size(), &bytes_written, NULL);
+            if (client_handle_ == hPipe && client_handle_ != INVALID_HANDLE_VALUE) {
+                ok = writeUnsafe("<HeartBeat>");
+            }
 
-            if (!result) {
-                DWORD error = GetLastError();
-                if (error == ERROR_BROKEN_PIPE ||
-                    error == ERROR_NO_DATA ||
-                    error == ERROR_PIPE_NOT_CONNECTED) {
-                    break; // 客户端已断开
+            if (!ok) {
+                if (client_handle_ == hPipe){
+                    disconnectClientUnsafe();
                 }
-                // 其他错误也视为断开（可选）
+
+                LeaveCriticalSection(&mutex_);
                 break;
             }
-            Sleep(5000); // 每5秒发送一次心跳
+
+            LeaveCriticalSection(&mutex_);
+
             LOG_INFO("SendServer", "与客户端保持连接中...");
+            Sleep(5000);
         }
 
         disconnectClient();
     }
+}
 
+bool SendServer::send(const std::string& message) {
+    if (!running_ || message.empty()) {
+        return false;
+    }
+
+    EnterCriticalSection(&mutex_);
+
+    if (client_handle_ == INVALID_HANDLE_VALUE) {
+        LeaveCriticalSection(&mutex_);
+        return false;
+    }
+
+    bool ok = writeUnsafe(message);
+
+    if (!ok) {
+        disconnectClientUnsafe();
+        LeaveCriticalSection(&mutex_);
+        return false;
+    }
+
+    LeaveCriticalSection(&mutex_);
+    return true;
+}
+
+bool SendServer::writeUnsafe(const std::string& message) {
+    if (client_handle_ == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    DWORD written = 0;
+
+    BOOL ok = WriteFile(
+        client_handle_,
+        message.data(),
+        static_cast<DWORD>(message.size()),
+        &written,
+        nullptr
+    );
+
+    return ok && written == message.size();
 }
 
 void SendServer::disconnectClient() {
     EnterCriticalSection(&mutex_);
+    disconnectClientUnsafe();
+    LeaveCriticalSection(&mutex_);
+}
+
+void SendServer::disconnectClientUnsafe() {
     if (client_handle_ != INVALID_HANDLE_VALUE) {
         FlushFileBuffers(client_handle_);
         DisconnectNamedPipe(client_handle_);
         CloseHandle(client_handle_);
         client_handle_ = INVALID_HANDLE_VALUE;
     }
-    LeaveCriticalSection(&mutex_);
-}
-
-bool SendServer::send(const std::string& message) {
-    if (!running_ || message.empty()) return false;
-
-    HANDLE h;
-    EnterCriticalSection(&mutex_);
-    h = client_handle_;
-    LeaveCriticalSection(&mutex_);
-
-    if (h == INVALID_HANDLE_VALUE) return false;
-
-    DWORD written = 0;
-    BOOL ok = WriteFile(h, message.c_str(), (DWORD)message.size(), &written, NULL);
-    if (!ok || written != message.size()) {
-        disconnectClient();
-        return false;
-    }
-    return true;
 }

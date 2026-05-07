@@ -6,11 +6,13 @@
 #include <atomic>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "concurrentqueue/blockingconcurrentqueue.h"
 #include "DataStruct.h"
 #include "SendServer.h"
 #include "AutoSaveJsonMap.hpp"
+#include "DoubleBufferSlot.h"
 
 
 class OrderBook {
@@ -19,8 +21,10 @@ public:
         const std::string symbol,
         const int vol_flag,
         SendServer& sendServer_ref,
+        SendServer& queueSendServer_ref,
         AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
-        AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref
+        AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref,
+        AutoSaveJsonMap<std::string, std::vector<int>>& queueMonitorInfo_ref
     );
     ~OrderBook();
 
@@ -82,7 +86,7 @@ private:
     std::map<int, int> limit_up_fengdan_volumes_;
 
     // 排单位置号序列
-    std::vector<int> order_position_index_;
+    DoubleBufferSlot<std::vector<std::vector<int>>> order_position_index_db_;
 
     // 价格 → 该档位总挂单量
     std::map<int, int> bid_volume_at_price_;
@@ -117,8 +121,13 @@ private:
     // 锁
     mutable std::mutex mtx_;
 
+    // 循环事件计数器
+    long loop_count_ = 0;
+
     // 外部关联数据
     SendServer& sendServer_ref_;
+    SendServer& queueSendServer_ref_;
     AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref_;
     AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref_;
+    AutoSaveJsonMap<std::string, std::vector<int>>& queueMonitorInfo_ref_;
 };

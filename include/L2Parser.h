@@ -206,11 +206,34 @@ inline std::string formatSellMessage(
     return result;
 }
 
+inline std::string formatQueueMessage(
+    const std::string& stock_symbol,
+    const std::vector<std::vector<int>>& order_position_index
+) {
+    if (order_position_index.empty()) {
+        return "";
+    }
+
+    std::string result = "<" + stock_symbol + "#";
+    bool first = true;
+    for (const auto& position_list : order_position_index) {
+        if (!first) result += ",";
+        first = false;
+        for (size_t i = 0; i < position_list.size(); ++i) {
+            if (i > 0) result += "/";
+            result += std::to_string(position_list[i]);
+        }
+    }
+    result += "#queue>";
+    return result;
+}
+
 
 inline std::string parseAndStoreStockAccount(
     const std::string_view message,
     AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
-    AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref  // 注意：这里变了！
+    AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref,
+    AutoSaveJsonMap<std::string, std::vector<int>>& queueMonitorInfo_ref
 ) {
     LOG_INFO("L2Parser", "收到消息: {}", message);
     if (message.size() < 3 || message.front() != '<' || message.back() != '>') {
@@ -318,6 +341,35 @@ inline std::string parseAndStoreStockAccount(
 
         sellMonitorInfo_ref.set(symbol, merged);
 
+    } else if (typeTag == "queue") {
+        std::vector<int> orderVols;
+        for (const auto& accView : accountViews) {
+            if (accView.empty()) continue;
+            int orderVol = svToInt(accView);
+            if (orderVol != 0 || accView == "0") {
+                orderVols.push_back(orderVol);
+            } else {
+                LOG_WARN("L2Parser", "无法解析 queue 订单量: {}", accView);
+            }
+        }
+
+        // 合并去重（保持原有逻辑）
+        if (queueMonitorInfo_ref.contains(symbol)) {
+            auto existingOpt = queueMonitorInfo_ref.get(symbol);
+            if (existingOpt) {
+                auto& existing = *existingOpt;
+                for (int orderVol : orderVols) {
+                    if (std::find(existing.begin(), existing.end(), orderVol) == existing.end()) {
+                        existing.push_back(orderVol);
+                    }
+                }
+                queueMonitorInfo_ref.set(symbol, existing);
+            } else {
+                queueMonitorInfo_ref.set(symbol, orderVols);
+            }
+        } else {
+            queueMonitorInfo_ref.set(symbol, orderVols);
+        }
     } else {
         LOG_WARN("L2Parser", "未知的消息类型标签: {}, 消息: {}", typeTag, message);
         return "";

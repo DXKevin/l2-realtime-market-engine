@@ -2,6 +2,7 @@
 #include "DataStruct.h"
 #include "Logger.h"
 #include "L2Parser.h"
+#include "SendServer.h"
 
 #include <algorithm>
 #include <vector>
@@ -12,15 +13,19 @@ OrderBook::OrderBook(
     const std::string symbol,
     const int vol_flag,
     SendServer& sendServer_ref,
+    SendServer& queueSendServer_ref,
     AutoSaveJsonMap<std::string, std::vector<int>>& cancelMonitorInfo_ref,
-    AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref
+    AutoSaveJsonMap<std::string, std::unordered_map<int, int>>& sellMonitorInfo_ref,
+    AutoSaveJsonMap<std::string, std::vector<int>>& queueMonitorInfo_ref
 ) : 
     symbol_(symbol), 
     vol_flag_(vol_flag),
     sendServer_ref_(sendServer_ref), 
+    queueSendServer_ref_(queueSendServer_ref),
     cancelMonitorInfo_ref_(cancelMonitorInfo_ref), 
-    sellMonitorInfo_ref_(sellMonitorInfo_ref) {
-
+    sellMonitorInfo_ref_(sellMonitorInfo_ref),
+    queueMonitorInfo_ref_(queueMonitorInfo_ref)
+{
     if (symbol_.empty()){
         LOG_ERROR(module_name, "OrderBook 无法用空股票代码初始化~");
         return;
@@ -201,6 +206,8 @@ void OrderBook::runProcessingLoop() {
 
             // 检查涨停撤单
             checkLimitUpWithdrawal(timestamp);
+
+            loop_count_ += 1;
         }
     }
 }
@@ -629,14 +636,29 @@ void OrderBook::printOrderBook(int level_num) const {
     // LOG_INFO(module_name, "历史涨停封单比例数量: {}", limit_up_fengdan_ratios_.size());
 
     std::string position_str;
-    if (!order_position_index_.empty()) {
-        for (size_t i = 0; i < order_position_index_.size(); ++i) {
-            position_str += std::to_string(order_position_index_[i]);
+    auto order_position_index = order_position_index_db_.read();
+    auto opt_queue_monitor_info = queueMonitorInfo_ref_.get(symbol_);
+    if (opt_queue_monitor_info) {
+        auto queue_monitor_info = *opt_queue_monitor_info;
+        if (order_position_index.size() == queue_monitor_info.size()) {
 
-            if (i < order_position_index_.size() - 1) {
-                position_str += "|";
+            bool first = true;
+            int i = 0;
+            for (auto& position_index : order_position_index) {
+                if (!first) {
+                    position_str += "|";
+                }
+
+                position_str += std::to_string(queue_monitor_info[i]);
+                position_str += ":";
+                first = false;
+
+                for (size_t j = 0; j < position_index.size(); ++j) {
+                    if (j > 0) position_str += ",";
+                    position_str += std::to_string(position_index[j]);
+                }
+                ++i;
             }
-
         }
     }
     
@@ -860,25 +882,55 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
 
     // 查找涨停板排单位置
     auto find_order_in_queue = [&]() {
-        std::vector<int>().swap(order_position_index_);
+        // 清空 vector 数组
+        std::vector<std::vector<int>> order_position_index;
+
+        auto opt_queue_monitor_info = queueMonitorInfo_ref_.get(symbol_);
+
+        if (!opt_queue_monitor_info) {
+            return;
+        }
+        auto queue_monitor_info = *opt_queue_monitor_info;
+
+        // 查找涨停板价格
+        auto it = bids_.find(fake_limit_up_price);
+
+        if (it == bids_.end()) {
+            return;
+        }
+
+        // 获取价格档位的订单
+        std::list<OrderRef>& orders = it -> second;
 
         int TIME_CUTOFF = 33301000;
-
-        auto it = bids_.find(fake_limit_up_price);
-        if (it != bids_.end()){
-            std::list<OrderRef>& orders = it -> second;
-            
+        // 遍历挂单量
+        for (int order_vol : queue_monitor_info) {
             int idx = 0;
+            std::vector<int> position_index;
+            // 遍历订单
             for (const auto& order : orders){
+                // 如果时间超过截止时间, 跳出循环
                 if (order.timestamp > TIME_CUTOFF) break;
 
-                if (order.volume == vol_flag_){
-                    order_position_index_.push_back(idx);
+                // 如果订单量匹配, 记录位置
+                if (order.volume == order_vol){
+                    position_index.push_back(idx + 1);
                 }
 
                 ++idx;
             }
+            order_position_index.push_back(position_index);
         }
+
+        order_position_index_db_.update(order_position_index);
+
+        if (loop_count_ % 200 == 0){
+            queueSendServer_ref_.send(formatQueueMessage(
+                symbol_, 
+                order_position_index
+            ));
+        }
+
     };
 
 

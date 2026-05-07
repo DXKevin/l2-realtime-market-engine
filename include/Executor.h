@@ -49,6 +49,8 @@ private:
     std::unique_ptr<std::unordered_map<std::string, std::unique_ptr<OrderBook>>> orderBooks_;
     std::unique_ptr<AutoSaveJsonMap<std::string, std::vector<int>>> cancelMonitorInfo_;
     std::unique_ptr<AutoSaveJsonMap<std::string, std::unordered_map<int, int>>> sellMonitorInfo_;
+    std::unique_ptr<AutoSaveJsonMap<std::string, std::vector<int>>> queueMonitorInfo_;
+
 
     std::unique_ptr<moodycamel::BlockingConcurrentQueue<std::string>> monitorEventQueue_;
 
@@ -56,6 +58,7 @@ private:
     std::unique_ptr<L2TcpSubscriber> orderSubscriber_; 
     std::unique_ptr<L2TcpSubscriber> tradeSubscriber_; 
     std::unique_ptr<SendServer> sendServer_;
+    std::unique_ptr<SendServer> queueSendServer_;
     std::unique_ptr<ReceiveServer> recvServer_;
     std::unique_ptr<DataRouter> dataRouter_;
 
