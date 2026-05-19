@@ -154,7 +154,7 @@ void OrderBook::runProcessingLoop() {
                     timestamp = std::get<L2Trade>(it->data).timestamp;
                 }
 
-                checkLimitUpWithdrawal(timestamp);   
+                // checkLimitUpWithdrawal(timestamp);   
                 
             }
             std::vector<MarketEvent>().swap(history_event_buffer_);
