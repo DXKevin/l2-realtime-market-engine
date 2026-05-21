@@ -281,6 +281,11 @@ inline std::string parseAndStoreStockAccount(
             if (existingOpt) {
                 auto& existing = *existingOpt;
                 for (int acc : newAccounts) {
+                    if (acc == 0) {
+                        existing.clear();
+                        break;
+                    }
+
                     if (std::find(existing.begin(), existing.end(), acc) == existing.end()) {
                         existing.push_back(acc);
                     }
