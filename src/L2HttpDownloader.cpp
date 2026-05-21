@@ -1,9 +1,12 @@
 #include "L2HttpDownloader.h"
+#include "DataStruct.h"
 #include "L2Parser.h"
 #include "nlohmann/json.hpp"
 #include "Logger.h"
 #include "FileOperator.h"
 #include "Base64Decoder.h"
+#include <algorithm>
+#include <vector>
 
 
 
@@ -170,6 +173,9 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
     }
 
     LOG_INFO("L2HttpDownloader", "开始解析HTTP数据, 合约代码: {}, 类型: {}, 数据大小: {} 字节", symbol, type, result_view.size());
+
+    std::vector<MarketEvent> market_events;
+
     while (pos < result_view.size()) {
         size_t next = result_view.find('\n', pos);
 
@@ -196,9 +202,10 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                 };
                 
                 MarketEvent event = MarketEvent(L2Order(relevant_fields));
+                market_events.push_back(event);
 
-                const auto& order = std::get<L2Order>(event.data);
-                it->second->pushHistoryEvent(event);
+                // const auto& order = std::get<L2Order>(event.data);
+                // it->second->pushHistoryEvent(event);
 
                 // if (order.timestamp < 42000000) {
                 //     it->second->pushHistoryEvent(event);
@@ -215,9 +222,10 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
                 };
 
                 MarketEvent event = MarketEvent(L2Trade(relevant_fields));
+                market_events.push_back(event);
 
-                const auto& trade = std::get<L2Trade>(event.data);
-                it->second->pushHistoryEvent(event);
+                // const auto& trade = std::get<L2Trade>(event.data);
+                // it->second->pushHistoryEvent(event);
 
                 // if (trade.timestamp < 42000000) {
                 //     it->second->pushHistoryEvent(event);
@@ -231,8 +239,28 @@ void L2HttpDownloader::parse_data(const std::string& symbol, const std::string& 
 
     // 标记历史数据下载处理完成
     if (type == "Order") {
+        // 按id字段排序
+        std::sort(market_events.begin(), market_events.end(), [](const MarketEvent& a, const MarketEvent& b) {
+            return std::get<L2Order>(a.data).id < std::get<L2Order>(b.data).id;
+        });
+        
+        // 加入队列
+        for (auto& event : market_events) {
+            it->second->pushHistoryEvent(event);
+        }
+
         it->second->is_history_order_done_.store(true);
     } else if (type == "Tran") {
+        // 按timestamp字段排序
+        std::sort(market_events.begin(), market_events.end(), [](const MarketEvent& a, const MarketEvent& b) {
+            return std::get<L2Trade>(a.data).timestamp < std::get<L2Trade>(b.data).timestamp;
+        });
+        
+        // 加入队列
+        for (auto& event : market_events) {
+            it->second->pushHistoryEvent(event);
+        }
+        
         it->second->is_history_trade_done_.store(true);
     }
 }

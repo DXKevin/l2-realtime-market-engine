@@ -109,7 +109,7 @@ void OrderBook::runProcessingLoop() {
              is_history_event_queue_done_.load() == false) {
                 if (isHistoryDataLoadingComplete()) {
                     // 历史数据接受完毕，对订单进行事件排序, 排序是为了保证回溯时候指标的正确触发
-                    std::sort(history_event_buffer_.begin(), history_event_buffer_.end(), [](const MarketEvent& a, const MarketEvent& b) {
+                    std::stable_sort(history_event_buffer_.begin(), history_event_buffer_.end(), [](const MarketEvent& a, const MarketEvent& b) {
                         int timestamp_a = (a.type == MarketEvent::EventType::ORDER) ? std::get<L2Order>(a.data).timestamp : std::get<L2Trade>(a.data).timestamp;
                         int timestamp_b = (b.type == MarketEvent::EventType::ORDER) ? std::get<L2Order>(b.data).timestamp : std::get<L2Trade>(b.data).timestamp;
                         return timestamp_a < timestamp_b;
@@ -165,7 +165,8 @@ void OrderBook::runProcessingLoop() {
             generateDuplicateSets();
 
             // printOrderBook(10);
-
+            // int timestamp = 41400000;
+            // checkLimitUpWithdrawal(timestamp);   
             LOG_INFO(module_name, "历史事件处理完毕，开始处理实时事件队列...");
             
         } else {
@@ -740,7 +741,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
         max_bid_volume_ = fengdan_volume_;
         // LOG_INFO(module_name, "[{}] 创历史最高买一量: {}, 价格: {}", symbol_, max_bid_volume_, current_price / 10000.0);
         
-        return; // 若发生更新, 肯定是买盘增加了, 直接返回
+        // return; // 若发生更新, 肯定是买盘增加了, 直接返回
     } else if (last_event_timestamp_ >= 33900000  && last_event_timestamp_ <= 33960000) {
         // 9:25:00 ~ 9:26:00
         max_bid_volume_ = fengdan_volume_;
@@ -909,6 +910,9 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
             std::vector<int> position_index;
             // 遍历订单
             for (const auto& order : orders){
+                // 测试打印数据
+                // LOG_INFO(module_name, "volume {}, order timestamp {}", order.volume, order.timestamp);
+
                 // 如果时间超过截止时间, 跳出循环
                 if (order.timestamp > TIME_CUTOFF) break;
 
