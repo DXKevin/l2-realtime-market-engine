@@ -359,22 +359,26 @@ inline std::string parseAndStoreStockAccount(
         }
 
         // 合并去重（保持原有逻辑）
-        if (queueMonitorInfo_ref.contains(symbol)) {
-            auto existingOpt = queueMonitorInfo_ref.get(symbol);
-            if (existingOpt) {
-                auto& existing = *existingOpt;
-                for (int orderVol : orderVols) {
-                    if (std::find(existing.begin(), existing.end(), orderVol) == existing.end()) {
-                        existing.push_back(orderVol);
-                    }
-                }
-                queueMonitorInfo_ref.set(symbol, existing);
-            } else {
-                queueMonitorInfo_ref.set(symbol, orderVols);
-            }
-        } else {
-            queueMonitorInfo_ref.set(symbol, orderVols);
-        }
+        // if (queueMonitorInfo_ref.contains(symbol)) {
+        //     auto existingOpt = queueMonitorInfo_ref.get(symbol);
+        //     if (existingOpt) {
+        //         auto& existing = *existingOpt;
+        //         for (int orderVol : orderVols) {
+        //             if (std::find(existing.begin(), existing.end(), orderVol) == existing.end()) {
+        //                 existing.push_back(orderVol);
+        //             }
+        //         }
+        //         queueMonitorInfo_ref.set(symbol, existing);
+        //     } else {
+        //         queueMonitorInfo_ref.set(symbol, orderVols);
+        //     }
+        // } else {
+        //     queueMonitorInfo_ref.set(symbol, orderVols);
+        // }
+
+        // 直接覆盖
+        queueMonitorInfo_ref.set(symbol, orderVols);
+
     } else {
         LOG_WARN("L2Parser", "未知的消息类型标签: {}, 消息: {}", typeTag, message);
         return "";
