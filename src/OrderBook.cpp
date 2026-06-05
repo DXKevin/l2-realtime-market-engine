@@ -667,6 +667,7 @@ void OrderBook::printOrderBook(int level_num) const {
     LOG_INFO(module_name, "当前封单量: {}", fengdan_volume_);
     LOG_INFO(module_name, "最大封单量: {}", max_bid_volume_);
     LOG_INFO(module_name, "最后订单时间: {}", last_event_timestamp_);
+    LOG_INFO(module_name, "当前循环数: {}", loop_count_);
     LOG_INFO(module_name, "=========================================");
 
 }
@@ -928,7 +929,7 @@ void OrderBook::checkLimitUpWithdrawal(int timestamp) {
 
         order_position_index_db_.update(order_position_index);
 
-        if (loop_count_ % 200 == 0){
+        if (loop_count_ % 10 == 0){
             queueSendServer_ref_.send(formatQueueMessage(
                 symbol_, 
                 order_position_index
